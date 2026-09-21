@@ -11,7 +11,10 @@ CONFIG_FILE = "config.json"
 
 class ConfigManager:
     def __init__(self, config_file: str = CONFIG_FILE):
-        self.config_file = config_file
+        # Allow the config location to be overridden (e.g. in Docker, point it
+        # into a persisted, bind-mounted directory). Falls back to the default
+        # CONFIG_FILE in the current working directory when unset.
+        self.config_file = os.environ.get("OPENYUGI_CONFIG_FILE") or config_file
         self._lock = threading.RLock()
         self.config: Dict[str, Any] = self._load_config()
         self._ensure_auth_config()

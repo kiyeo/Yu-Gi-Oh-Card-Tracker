@@ -1,0 +1,33 @@
+# Local runtime data & config (persisted via bind mounts instead)
+data/
+config.json
+
+# Python / virtualenv artifacts
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Build & packaging output
+dist/
+build/
+*.spec
+
+# Version control & OS cruft
+.git/
+.gitignore
+.DS_Store
+*.log
+.nicegui/
+
+# Docs & tests are not needed at runtime
+docs/
+tests/
+src/tests/
+
+# Verification artifacts
+*.dc.html
+/verification/
