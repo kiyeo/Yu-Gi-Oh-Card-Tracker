@@ -1,0 +1,42 @@
+# Standalone OpenYuGi deployment.
+#
+# Unlike docker-compose.yml (which persists data on the NAS via a CIFS volume),
+# this file is fully self-contained: it stores all runtime data in a local
+# Docker-managed named volume, with no external share and no USERNAME/PASSWORD
+# required. Bring it up with:
+#
+#   docker compose -f docker-compose.standalone.yml up --build -d
+#
+services:
+  ygo-tracker:
+    build: .
+    image: openyugi
+    container_name: openyugi_tracker
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Keep config.json inside the persisted data/ directory.
+      - OPENYUGI_CONFIG_FILE=/app/data/config.json
+      # Provide a stable session-signing secret (>=32 chars) so logins survive restarts.
+      # Override in an .env file or your shell before `docker compose up`.
+      - OPENYUGI_STORAGE_SECRET=${OPENYUGI_STORAGE_SECRET:-please-change-me-to-a-long-random-string-32+}
+      # Set to 1/true/yes only when served exclusively over HTTPS.
+      - OPENYUGI_SECURE_COOKIES=${OPENYUGI_SECURE_COOKIES:-0}
+      # Redirect the ML model caches (EasyOCR / DocTR / Torch / HuggingFace) into
+      # the persisted volume so they are not re-downloaded on every recreate.
+      # (YOLO/Ultralytics weights are baked into the image at build time.)
+      - EASYOCR_MODULE_PATH=/app/data/models/easyocr
+      - DOCTR_CACHE_DIR=/app/data/models/doctr
+      - YOLO_CONFIG_DIR=/app/data/models/ultralytics
+      - TORCH_HOME=/app/data/models/torch
+      - HF_HOME=/app/data/models/huggingface
+      - XDG_CACHE_HOME=/app/data/cache
+    volumes:
+      # Local Docker-managed volume — no NAS/CIFS dependency.
+      - openyugi_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  openyugi_data:
+    driver: local

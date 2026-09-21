@@ -33,22 +33,7 @@ COPY . .
 # fixed cost and lets the scanner run offline.
 # (EasyOCR/DocTR/Torch caches are instead redirected to the NAS volume via env
 #  vars in docker-compose.yml, since those libraries honor cache-dir env vars.)
-RUN set -eux; \
-    for w in yolov8l.pt yolov8n-obb.pt yolo26l-obb.pt yolo26l-cls.pt yolo26n-cls.pt; do \
-        python - "$w" <<'PY' || echo "skip: $w (not fetched at build time)"; \
-import sys, urllib.request
-name = sys.argv[1]
-# Ultralytics assets are served from the GitHub releases CDN.
-url = f"https://github.com/ultralytics/assets/releases/latest/download/{name}"
-try:
-    urllib.request.urlretrieve(url, name)
-    print(f"fetched {name}")
-except Exception as e:
-    print(f"could not fetch {name}: {e}")
-    raise
-PY
-    done; \
-    ls -la /app/*.pt || true
+RUN python docker/download_weights.py && ls -la /app/*.pt || true
 
 # NiceGUI serves on 0.0.0.0:8080 by default.
 EXPOSE 8080
