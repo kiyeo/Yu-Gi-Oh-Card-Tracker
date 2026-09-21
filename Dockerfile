@@ -1,38 +1,68 @@
-# OpenYuGi - NiceGUI web app
-# Python 3.11 matches the packaged-build workflow.
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1
 
-# System libraries required by the CV/OCR stack (OpenCV, EasyOCR, DocTR, Torch).
-# The project uses opencv-python-headless, so no full GUI GL stack is needed,
-# but libGL and glib shared objects are still loaded at import time.
+###############################################################################
+# OpenYuGi - NiceGUI web app (multi-stage, CPU-only build)
+#
+# The scanner stack (torch via easyocr / ultralytics / python-doctr) pulls the
+# CUDA build of PyTorch by default on x86, which alone is ~6 GB and is useless
+# on a CPU-only device like the Pi 5. We force the CPU-only wheels and use a
+# multi-stage build so compilers and caches never reach the final image.
+###############################################################################
+
+# ---------- Stage 1: builder ----------
+FROM python:3.11-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Build toolchain (needed to compile any sdist-only wheels). Stays in this stage.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Isolated virtualenv we can copy wholesale into the runtime stage.
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN pip install --upgrade pip
+
+# Install CPU-only PyTorch FIRST from the PyTorch CPU index, so the heavy CUDA
+# variant is never resolved as a transitive dependency of easyocr/doctr/ultralytics.
+RUN pip install --index-url https://download.pytorch.org/whl/cpu \
+    torch torchvision
+
+# Now install the rest. torch is already satisfied, so PyPI won't pull the
+# CUDA build. --no-deps is NOT used because we want the other transitive deps.
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# ---------- Stage 2: runtime ----------
+FROM python:3.11-slim AS runtime
+
+# Runtime shared libraries required by the CV/OCR stack at import time.
+# No build-essential here — the wheels are already compiled.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Keep Python output unbuffered and skip .pyc files inside the container.
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+# Copy the ready-built virtualenv from the builder stage.
+COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
 
-# Install dependencies first to leverage Docker layer caching.
-COPY requirements.txt .
-RUN python -m pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application code.
+# Copy the application code.
 COPY . .
 
-# Pre-download the YOLO/Ultralytics weights used by the scanner INTO the image.
-# Ultralytics resolves bare model names (e.g. 'yolov8l.pt') against the current
-# working directory and, if missing, downloads them there at runtime. On the
-# Pi 5 that writable layer lives on the space-constrained USB OS drive and would
-# re-download on every container recreate. Baking them in makes it a one-time,
-# fixed cost and lets the scanner run offline.
-# (EasyOCR/DocTR/Torch caches are instead redirected to the NAS volume via env
-#  vars in docker-compose.yml, since those libraries honor cache-dir env vars.)
+# Pre-download the YOLO/Ultralytics weights used by the scanner INTO the image so
+# they are not written to the runtime layer (the Pi 5's USB OS drive) or
+# re-downloaded on every container recreate. Best-effort: the build does not fail
+# if a weight is temporarily unavailable.
 RUN python docker/download_weights.py && ls -la /app/*.pt || true
 
 # NiceGUI serves on 0.0.0.0:8080 by default.
