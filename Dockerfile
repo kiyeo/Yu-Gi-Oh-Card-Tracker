@@ -65,8 +65,21 @@ COPY . .
 # if a weight is temporarily unavailable.
 RUN python docker/download_weights.py && ls -la /app/*.pt || true
 
-# NiceGUI serves on 0.0.0.0:8080 by default.
-EXPOSE 8080
+# Run as a non-root user (uid/gid 1000) to match the NAS CIFS mount ownership
+# (uid=1000,gid=1000). This lets the app write config/collections to the share
+# and create its relative logs/ directory. /app is made writable so the app's
+# CWD-relative writes (e.g. logs/) succeed.
+RUN groupadd --gid 1000 openyugi \
+    && useradd --uid 1000 --gid 1000 --no-create-home --shell /usr/sbin/nologin openyugi \
+    && mkdir -p /app/logs /app/data \
+    && chown -R 1000:1000 /app
+USER 1000:1000
 
-# Run from the repository root so relative data paths (data/, config.json) resolve.
+# NiceGUI serves on 0.0.0.0:8084 by default.
+EXPOSE 8084
+
+# The entrypoint sets up /app/data -> /app/nas/<subdir> on the mounted share,
+# then execs the app. Invoked via `sh` with an absolute path so it does not
+# depend on the file's exec bit surviving the build/copy.
+ENTRYPOINT ["sh", "/app/docker/entrypoint.sh"]
 CMD ["python", "main.py"]

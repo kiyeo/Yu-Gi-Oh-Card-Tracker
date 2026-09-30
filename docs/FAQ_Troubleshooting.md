@@ -52,7 +52,7 @@ This often happens on **Windows** if:
 
 #### App crashes on startup
 Check the console output. Common causes:
-- **Port 8080 in use**: Another app is using the default port.
+- **Port 8084 in use**: Another app is using the default port.
 - **Corrupt Config**: Delete `data/config.json` to reset settings.
 
 ### Advanced Debugging

@@ -2,7 +2,7 @@
 
 ## Executive summary
 
-This document is a beginner‑friendly, step‑by‑step, copy‑paste tutorial to run the GitHub project **Yu‑Gi‑Oh‑Card‑Tracker** (also branded in its README/UI as **OpenYuGi**) on **Windows**, **macOS**, and **Ubuntu Linux**, using a **Conda environment named `openyugi`** and **Python 3.10**. The repository’s entry point is the **root‑level `main.py`**, which launches a web UI using **NiceGUI** and defaults to opening the app at `http://localhost:8080`. citeturn34view0turn36view0
+This document is a beginner‑friendly, step‑by‑step, copy‑paste tutorial to run the GitHub project **Yu‑Gi‑Oh‑Card‑Tracker** (also branded in its README/UI as **OpenYuGi**) on **Windows**, **macOS**, and **Ubuntu Linux**, using a **Conda environment named `openyugi`** and **Python 3.10**. The repository’s entry point is the **root‑level `main.py`**, which launches a web UI using **NiceGUI** and defaults to opening the app at `http://localhost:8084`. citeturn34view0turn36view0
 
 Key facts established from the repository and primary sources:
 
@@ -16,7 +16,7 @@ Where the repository documentation contains placeholder clone commands (e.g., `y
 
 ## Project overview and what you will install
 
-The application is a local collection manager with a browser‑based UI (NiceGUI). You run a local Python process (`python main.py`), then use a browser to access `http://localhost:8080`. The README states the server starts and your default browser should open that URL. citeturn34view0
+The application is a local collection manager with a browser‑based UI (NiceGUI). You run a local Python process (`python main.py`), then use a browser to access `http://localhost:8084`. The README states the server starts and your default browser should open that URL. citeturn34view0
 
 The repository’s root contains (among other items) `main.py` (the launcher) and `requirements.txt` (Python dependencies). citeturn34view0turn33view0
 
@@ -275,7 +275,7 @@ The README’s launch step is:
 python main.py
 ```
 
-and it says the browser should open `http://localhost:8080`. citeturn34view0
+and it says the browser should open `http://localhost:8084`. citeturn34view0
 
 Also, the repository’s `main.py` ends with `ui.run(title='OpenYuGi', ... reload=False)` guarded by an `if __name__ in {"__main__", "__mp_main__"}` block. citeturn36view0
 
@@ -290,18 +290,18 @@ If your browser does not open automatically, open it yourself (Windows command):
 
 **PowerShell**
 ```powershell
-Start-Process "http://localhost:8080"
+Start-Process "http://localhost:8084"
 ```
 
 **Command Prompt**
 ```bat
-start http://localhost:8080
+start http://localhost:8084
 ```
 
 What you should see:
 
-- A terminal line indicating the server is ready (NiceGUI commonly prints “NiceGUI ready to go on http://localhost:8080/”). citeturn22search5  
-- Your browser shows the OpenYuGi UI at `http://localhost:8080`. citeturn34view0  
+- A terminal line indicating the server is ready (NiceGUI commonly prints “NiceGUI ready to go on http://localhost:8084/”). citeturn22search5  
+- Your browser shows the OpenYuGi UI at `http://localhost:8084`. citeturn34view0  
 
 To stop the server: press `Ctrl+C` in the terminal window that is running it.
 
@@ -330,9 +330,9 @@ Suggested screenshot checklist and filenames (example):
 - `win-03-conda-version.png` (after `conda --version`)
 - `win-04-openyugi-env.png` (after `conda activate openyugi` and `python --version`)
 - `win-05-pip-install.png` (after `pip install -r requirements.txt`)
-- `win-06-openyugi-running.png` (terminal + browser showing `http://localhost:8080`)
+- `win-06-openyugi-running.png` (terminal + browser showing `http://localhost:8084`)
 
-image_group{"layout":"carousel","aspect_ratio":"16:9","query":["Miniconda Windows installer screenshot","Git for Windows installer screenshot","Windows PowerShell conda activate screenshot","NiceGUI localhost 8080 screenshot"],"num_per_query":1}
+image_group{"layout":"carousel","aspect_ratio":"16:9","query":["Miniconda Windows installer screenshot","Git for Windows installer screenshot","Windows PowerShell conda activate screenshot","NiceGUI localhost 8084 screenshot"],"num_per_query":1}
 
 ## macOS setup
 
@@ -511,17 +511,17 @@ Run:
 python main.py
 ```
 
-This is the repository’s stated launch command, and it should open `http://localhost:8080`. citeturn34view0turn36view0
+This is the repository’s stated launch command, and it should open `http://localhost:8084`. citeturn34view0turn36view0
 
 If your browser does not open automatically:
 
 ```bash
-open http://localhost:8080
+open http://localhost:8084
 ```
 
 Expected behaviour:
 
-- Terminal logs indicate the server is running; NiceGUI commonly reports it is available at `http://localhost:8080/`. citeturn22search5
+- Terminal logs indicate the server is running; NiceGUI commonly reports it is available at `http://localhost:8084/`. citeturn22search5
 
 Background option (macOS):
 
@@ -544,7 +544,7 @@ Suggested screenshot checklist:
 - `mac-05-pip-install.png`
 - `mac-06-openyugi-running.png`
 
-image_group{"layout":"carousel","aspect_ratio":"16:9","query":["Miniconda macOS pkg installer screenshot","macOS Terminal conda init zsh screenshot","NiceGUI app localhost 8080 mac screenshot","Xcode-select install git screenshot"],"num_per_query":1}
+image_group{"layout":"carousel","aspect_ratio":"16:9","query":["Miniconda macOS pkg installer screenshot","macOS Terminal conda init zsh screenshot","NiceGUI app localhost 8084 mac screenshot","Xcode-select install git screenshot"],"num_per_query":1}
 
 ## Ubuntu setup
 
@@ -686,13 +686,13 @@ Entry point and run call are in `main.py` (`ui.run(...)`). citeturn36view0
 Open browser manually if needed (Ubuntu):
 
 ```bash
-xdg-open http://localhost:8080
+xdg-open http://localhost:8084
 ```
 
 Expected:
 
-- Browser loads the UI at `http://localhost:8080`. citeturn34view0  
-- Terminal shows the server is ready; NiceGUI commonly prints a “ready to go” URL including port 8080. citeturn22search5
+- Browser loads the UI at `http://localhost:8084`. citeturn34view0  
+- Terminal shows the server is ready; NiceGUI commonly prints a “ready to go” URL including port 8084. citeturn22search5
 
 Background option (Ubuntu):
 
@@ -802,17 +802,17 @@ python main.py
 
 **Problem: browser opens but page doesn’t load**
 
-- Ensure you’re using `http://localhost:8080` as the README states. citeturn34view0  
-- If port 8080 is already in use, you can identify what’s listening:
+- Ensure you’re using `http://localhost:8084` as the README states. citeturn34view0  
+- If port 8084 is already in use, you can identify what’s listening:
 
 Windows (PowerShell):
 ```powershell
-netstat -ano | findstr :8080
+netstat -ano | findstr :8084
 ```
 
 macOS / Ubuntu:
 ```bash
-lsof -i :8080
+lsof -i :8084
 ```
 
 Then stop the conflicting process or reboot.
@@ -858,7 +858,7 @@ flowchart TD
   F --> G[Clone repo into Projects folder]
   G --> H[Install deps: pip install -r requirements.txt]
   H --> I[Run: python main.py]
-  I --> J[Open http://localhost:8080]
+  I --> J[Open http://localhost:8084]
   J --> K[Capture screenshots + verify]
 ```
 
@@ -874,7 +874,7 @@ flowchart TD
 | Clone repo | `git clone https://github.com/DJ-Cat-N-Cheese/Yu-Gi-Oh-Card-Tracker.git` | `git clone https://github.com/DJ-Cat-N-Cheese/Yu-Gi-Oh-Card-Tracker.git` | same | same |
 | Install deps | `pip install -r requirements.txt` | `pip install -r requirements.txt` | same | same |
 | Run app | `python main.py` | `python main.py` | `python main.py` | `python main.py` |
-| Open browser | `Start-Process "http://localhost:8080"` | `start http://localhost:8080` | `open http://localhost:8080` | `xdg-open http://localhost:8080` |
+| Open browser | `Start-Process "http://localhost:8084"` | `start http://localhost:8084` | `open http://localhost:8084` | `xdg-open http://localhost:8084` |
 
 Conda activation (`conda activate myenv`) is the documented standard, and `conda init` exists to enable that behaviour across shells. citeturn31view2turn26view3
 

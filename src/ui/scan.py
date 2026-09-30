@@ -134,6 +134,7 @@ async function startCamera(deviceId) {
         const constraints = {
             video: {
                 deviceId: deviceId ? { exact: deviceId } : undefined,
+                facingMode: deviceId ? undefined : "environment",
                 width: { ideal: 1920 },
                 height: { ideal: 1080 }
             }

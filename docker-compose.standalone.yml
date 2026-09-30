@@ -13,7 +13,7 @@ services:
     image: openyugi
     container_name: openyugi_tracker
     ports:
-      - "8080:8080"
+      - "8084:8084"
     environment:
       - PYTHONUNBUFFERED=1
       # Keep config.json inside the persisted data/ directory.

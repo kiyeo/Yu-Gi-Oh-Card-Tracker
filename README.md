@@ -155,7 +155,7 @@ Run the application from the repository root so its relative data paths resolve 
 python main.py
 ```
 
-NiceGUI normally opens the browser automatically. Otherwise, visit <http://localhost:8080>, sign in with `admin` / `admin`, and change the credentials in Settings. Stop the server with `Ctrl+C` in the terminal.
+NiceGUI normally opens the browser automatically. Otherwise, visit <http://localhost:8084>, sign in with `admin` / `admin`, and change the credentials in Settings. Stop the server with `Ctrl+C` in the terminal.
 
 ## 🧭 First-run setup
 
@@ -408,7 +408,7 @@ Quick fixes for the most common snags are below. For scanner-specific issues and
 - Confirm the virtual environment is active and rerun `python -m pip install -r requirements.txt`.
 - Run `python main.py` from the repository root.
 - Read the terminal output and `logs/app.log` for the first exception.
-- If port 8080 is already occupied, stop the other process before restarting OpenYuGi.
+- If port 8084 is already occupied, stop the other process before restarting OpenYuGi.
 - If `config.json` is invalid, move it aside while OpenYuGi is stopped and restart to generate defaults. Keep the old file until any needed settings are recovered.
 </details>
 

@@ -1,0 +1,54 @@
+services:
+  ygo-tracker:
+    build: ./Yu-Gi-Oh-Card-Tracker
+    image: openyugi
+    container_name: openyugi_tracker
+    user: "1000:1000"
+    #ports:
+    #  - "8084:8084"
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Keep config.json inside the persisted data/ directory.
+      - OPENYUGI_CONFIG_FILE=/app/data/config.json
+      # Provide a stable session-signing secret (>=32 chars) so logins survive restarts.
+      # Override in an .env file or your shell before `docker compose up`.
+      - OPENYUGI_STORAGE_SECRET=${OPENYUGI_STORAGE_SECRET:-please-change-me-to-a-long-random-string-32+}
+      # Set to 1/true/yes only when served exclusively over HTTPS.
+      - OPENYUGI_SECURE_COOKIES=${OPENYUGI_SECURE_COOKIES:-0}
+      # The Pi 5 boots off a space-constrained USB OS drive, so redirect the
+      # ML model caches that honor cache-dir env vars (EasyOCR / DocTR / Torch /
+      # HuggingFace) onto the NAS-backed volume. Otherwise these weights download
+      # into the container's writable layer on the USB drive and re-download on
+      # every recreate. (YOLO/Ultralytics weights are baked into the image at
+      # build time instead.)
+      - EASYOCR_MODULE_PATH=/app/data/models/easyocr
+      - DOCTR_CACHE_DIR=/app/data/models/doctr
+      - TORCH_HOME=/app/data/models/torch
+      - HF_HOME=/app/data/models/huggingface
+      - XDG_CACHE_HOME=/app/data/cache
+      # Trivial, non-persistent config files (not model weights) — keep them on
+      # the container-local /tmp, which is always writable. This silences the
+      # matplotlib "/home/openyugi not writable" and Ultralytics "config dir not
+      # writable" warnings. Model weights are baked into the image.
+      - MPLCONFIGDIR=/tmp/matplotlib
+      - YOLO_CONFIG_DIR=/tmp/ultralytics
+      # Data subfolder created by the entrypoint inside the mounted share root
+      # (/app/nas). The app's /app/data is symlinked to /app/nas/${...}.
+      - OPENYUGI_DATA_SUBDIR=openyugi
+    volumes:
+      # Option B: mount the proven, writable SMB share ROOT at /app/nas. The
+      # entrypoint creates the "openyugi" subfolder there and symlinks /app/data
+      # to it, so we don't depend on a pre-existing share subdirectory.
+      - nas_shared:/app/nas
+    restart: unless-stopped
+
+volumes:
+  nas_shared:
+    driver: local
+    driver_opts:
+      type: cifs
+      # noperm: don't let the CIFS client enforce Unix permission checks — the
+      #   SMB server already authorizes the authenticated user.
+      # nobrl:  don't send byte-range lock requests some SMB servers reject.
+      o: "username=${USERNAME},uid=1000,gid=1000,noperm,nobrl,vers=3.0"
+      device: "//127.0.0.1/shared/data"

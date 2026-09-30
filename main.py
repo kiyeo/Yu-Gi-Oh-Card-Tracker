@@ -1,7 +1,13 @@
 import sys
 import os
 import multiprocessing
-from nicegui import ui, app
+from nicegui import ui, app, core
+
+# --- FORCE CORESOCKET BUFFER INCREASE IMMEDIATELY AFTER IMPORTING ---
+if hasattr(core, 'sio'):
+    core.sio.eio.max_http_buffer_size = 30 * 1024 * 1024  # Expands buffer to 30MB
+# --------------------------------------------------------------------
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -94,8 +100,13 @@ app.add_static_files('/data/img', 'data/img') # Serve data/img for Art Match if 
 app.add_static_files('/sets', 'data/sets')
 app.add_static_files('/storage', 'data/collections/storage')
 app.add_static_files('/flags', 'data/flags')
+#if os.environ.get('OPENYUGI_ENABLE_DEBUG_STATIC', '').lower() in {'1', 'true', 'yes'}:
+#    app.add_static_files('/debug', 'debug')
+# Force NiceGUI to find the scan debug images correctly
+app.add_static_files('/debug/scans', '/app/data/scans')
+
 if os.environ.get('OPENYUGI_ENABLE_DEBUG_STATIC', '').lower() in {'1', 'true', 'yes'}:
-    app.add_static_files('/debug', 'debug')
+    app.add_static_files('/debug', '/app/data/scans') # Fallback if scanner strips path
 
 # Handle Chrome DevTools probe to prevent 404 warnings
 @app.get('/.well-known/appspecific/com.chrome.devtools.json')
@@ -105,8 +116,14 @@ def chrome_devtools_probe():
 if __name__ == "__main__":
     multiprocessing.freeze_support()
     # Disable reload to prevent restart loops when writing to data/ directory (images, db)
+
+    # --- ADD THESE TWO LINES TO OVERRIDE THE WEBSOCKET PAYLOAD CAPPING ---
+    from nicegui import core
+    core.sio.eio.max_http_buffer_size = 25 * 1024 * 1024  # Bump limit to 25MB
+    # --------------------------------------------------------------------
     ui.run(
         title='OpenYuGi',
+        port='8084',
         favicon='🃏',
         reload=False,
         storage_secret=get_storage_secret(),
