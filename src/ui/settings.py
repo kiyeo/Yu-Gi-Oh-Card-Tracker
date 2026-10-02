@@ -59,9 +59,10 @@ def settings_page() -> None:
                 ui.tooltip(
                     'In the Collection view, show owned cards using the actual image '
                     'of the printing you own (by set code), which reflects the '
-                    "era's card layout/frame. Images are fetched from Yugipedia and "
-                    'cached locally; the first load of each printing needs a network '
-                    'connection. Reload the Collection page to apply.'
+                    "era's card layout/frame. Run \"Download owned printing images\" "
+                    'under Data management first to cache them; cards without a cached '
+                    'printing image fall back to the default artwork. '
+                    'Reload the Collection page to apply.'
                 )
 
             async def save_application_settings() -> None:
@@ -253,6 +254,23 @@ def settings_page() -> None:
                 lambda filename: f'Sample collection created: {filename}',
             )
 
+        async def download_printing_images():
+            from src.services.printing_image_service import download_owned_printing_images
+
+            async def run(progress_callback):
+                return await download_owned_printing_images(progress_callback=progress_callback)
+
+            await run_progress_action(
+                'Downloading Owned Printing Images',
+                'Fetching era-accurate card layouts from Yugipedia for every owned printing...',
+                run,
+                lambda s: (
+                    f"Printing images updated: {s['downloaded']} downloaded, "
+                    f"{s['skipped']} already cached, {s['failed']} unresolved "
+                    f"({s['total']} total printings)."
+                ),
+            )
+
         with ui.grid(columns=1).classes('w-full gap-3 sm:grid-cols-2 lg:grid-cols-3'):
             ui.button('Update card database', icon='cloud_download', on_click=update_db).classes('w-full')
             ui.button('Update all languages', icon='cloud_sync', on_click=update_all_dbs).classes('w-full')
@@ -260,6 +278,13 @@ def settings_page() -> None:
             ui.button('Download Yugipedia set images', icon='image', on_click=download_yugipedia_images).classes('w-full')
             ui.button('Download low-res card images', icon='download', on_click=download_low_resolution_images).classes('w-full')
             ui.button('Download high-res card images', icon='high_quality', on_click=download_high_resolution_images).classes('w-full')
+            with ui.button('Download owned printing images', icon='collections', on_click=download_printing_images).classes('w-full'):
+                ui.tooltip(
+                    'For every printing you own, fetch its actual card image from '
+                    'Yugipedia (by set code), which reflects the era-appropriate '
+                    'card layout. Required for "Match owned printing layout" to show '
+                    'images. Cached locally; needs a network connection.'
+                )
             ui.button('Generate sample collection', icon='playlist_add', on_click=generate_sample).props(
                 'color=positive'
             ).classes('w-full')

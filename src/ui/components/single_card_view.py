@@ -545,7 +545,8 @@ class SingleCardView:
         save_callback: Callable = None,
         variant_id: str = None,
         hide_header_stats: bool = False,
-        storage_options: Dict[str, str] = None
+        storage_options: Dict[str, str] = None,
+        printing_src: str = None,
     ):
         try:
             active_timers = []
@@ -663,6 +664,15 @@ class SingleCardView:
 
                         def update_image():
                             img_id = input_state['image_id']
+
+                            # Prefer the era-accurate printing image on the initial
+                            # (owned) selection; fall back to id-based art if the
+                            # user picks a different artwork from the dropdown.
+                            if printing_src and img_id == image_id:
+                                image_element.source = printing_src
+                                image_element.update()
+                                return
+
                             high_res_remote_url = None
                             low_res_url = None
 

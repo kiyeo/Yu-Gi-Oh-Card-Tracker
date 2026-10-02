@@ -627,6 +627,14 @@ class CollectionPage:
             return vm.owned_image_id
         return vm.api_card.get_best_image_id()
 
+    def _collector_printing_src(self, item: 'CollectorRow') -> Optional[str]:
+        """Return the cached era-accurate printing image URL for a row, or None
+        when the setting is off / not owned / not yet cached."""
+        if (config_manager.get_match_owned_artwork() and item.is_owned
+                and item.set_code and item.set_code not in ('N/A', '')):
+            return image_manager.get_printing_image_url(item.set_code, item.language)
+        return None
+
     def _collector_row_image_src(self, item: 'CollectorRow') -> Optional[str]:
         """Image src for a collector row.
 
@@ -705,58 +713,6 @@ class CollectionPage:
              if unique_codes:
                  tasks = [image_manager.ensure_flag_image(code) for code in unique_codes]
                  await asyncio.gather(*tasks)
-
-        # When "match owned artwork" is enabled, fetch era-accurate printing
-        # images from Yugipedia for the owned items on this page (cached locally).
-        if config_manager.get_match_owned_artwork():
-            await self._prefetch_printing_images(items)
-
-    async def _prefetch_printing_images(self, items):
-        """Resolve + cache Yugipedia printing images for owned items on a page.
-
-        Each distinct (set_code, language) is fetched at most once. Images are
-        cached under data/printings and served via /printings. Failures are
-        silently ignored so the view falls back to the default artwork.
-        """
-        # Collect distinct owned printings needing a cached image.
-        pending = {}  # (set_code, language) -> card_name
-        for item in items:
-            set_code = getattr(item, 'set_code', None)
-            is_owned = getattr(item, 'is_owned', False) or getattr(item, 'owned_quantity', 0) > 0
-            if not set_code or not is_owned or set_code in ('N/A', ''):
-                continue
-            # Consolidated VMs don't carry a single set_code; handled per-variant
-            # via the collectors view. Here we only act on items exposing set_code.
-            language = getattr(item, 'language', None) or self.state['language']
-            card = item.api_card
-            key = (set_code, language.strip().upper())
-            if key in pending:
-                continue
-            if image_manager.printing_image_exists(set_code, language):
-                continue
-            pending[key] = card.name
-
-        if not pending:
-            return
-
-        semaphore = asyncio.Semaphore(5)
-
-        async def _resolve_one(set_code, language, card_name):
-            async with semaphore:
-                try:
-                    url = await self.yugipedia_service.get_set_printing_image_url(
-                        card_name, set_code, language
-                    )
-                    if url:
-                        await image_manager.ensure_printing_image(set_code, language, url)
-                except Exception as e:
-                    logger.debug(f"Printing image fetch failed for {card_name}/{set_code}: {e}")
-
-        tasks = [
-            _resolve_one(set_code, language, name)
-            for (set_code, language), name in pending.items()
-        ]
-        await asyncio.gather(*tasks)
 
     async def apply_filters(self, e=None, reset_page=True):
         if self.state['view_scope'] == 'consolidated':
@@ -1470,9 +1426,13 @@ class CollectionPage:
             logger.error(f"Error saving collection: {e}", exc_info=True)
             ui.notify(f"Error saving: {e}", type='negative')
 
-    async def open_single_view(self, card: ApiCard, is_owned: bool = False, quantity: int = 0, initial_set: str = None, owned_languages: Set[str] = None, rarity: str = None, set_name: str = None, language: str = None, condition: str = "Near Mint", first_edition: bool = False, image_url: str = None, image_id: int = None, set_price: float = 0.0, variant_id: str = None):
+    async def open_single_view(self, card: ApiCard, is_owned: bool = False, quantity: int = 0, initial_set: str = None, owned_languages: Set[str] = None, rarity: str = None, set_name: str = None, language: str = None, condition: str = "Near Mint", first_edition: bool = False, image_url: str = None, image_id: int = None, set_price: float = 0.0, variant_id: str = None, printing_src: str = None):
         async def on_save(c, set_code, rarity, language, quantity, condition, first_edition, image_id, variant_id, mode, **kwargs):
             await self.save_card_change(c, set_code, rarity, language, quantity, condition, first_edition, image_id, variant_id, mode, **kwargs)
+
+        # Prefer the era-accurate printing image when available.
+        if printing_src:
+            image_url = printing_src
 
         if self.state['view_scope'] == 'consolidated':
             owned_breakdown = {}
@@ -1504,13 +1464,23 @@ class CollectionPage:
             return
 
         if self.state['view_scope'] == 'collectors':
-             await self.single_card_view.open_collectors(card, quantity, initial_set or "N/A", rarity, set_name, language, condition, first_edition, image_url, image_id, set_price, self.state['current_collection'], on_save, variant_id=variant_id)
+             await self.single_card_view.open_collectors(card, quantity, initial_set or "N/A", rarity, set_name, language, condition, first_edition, image_url, image_id, set_price, self.state['current_collection'], on_save, variant_id=variant_id, printing_src=printing_src)
              return
 
         # Fallback removed
 
-    def _setup_card_tooltip(self, card: ApiCard, specific_image_id: int = None):
+    def _setup_card_tooltip(self, card: ApiCard, specific_image_id: int = None, printing_src: Optional[str] = None):
         if not card: return
+
+        # If a printing image (era-accurate layout) is available, show it as-is.
+        # These Yugipedia images are already full resolution, so no high-res
+        # download step is needed.
+        if printing_src:
+            with ui.tooltip().classes('bg-transparent shadow-none border-none p-0 overflow-visible z-[9999] max-w-none') \
+                             .props('style="max-width: none" delay=1050'):
+                ui.image(printing_src).classes('w-auto h-[65vh] min-w-[1000px] object-contain rounded-lg shadow-2xl') \
+                                      .props('fit=contain')
+            return
 
         # Determine target ID
         if specific_image_id:
@@ -1652,11 +1622,12 @@ class CollectionPage:
                 bg = 'bg-gray-900' if not item.is_owned else 'bg-gray-800 border border-accent'
 
                 img_src = self._collector_row_image_src(item)
+                printing_src = self._collector_printing_src(item)
 
                 with ui.grid(columns=cols).classes(f'w-full {bg} p-1 items-center rounded hover:bg-gray-700 transition cursor-pointer') \
-                        .on('click', lambda c=item: self.open_single_view(c.api_card, c.is_owned, c.owned_count, initial_set=c.set_code, rarity=c.rarity, set_name=c.set_name, language=c.language, condition=c.condition, first_edition=c.first_edition, image_url=c.image_url, image_id=c.image_id, set_price=c.price, variant_id=c.variant_id)):
+                        .on('click', lambda c=item, ps=printing_src: self.open_single_view(c.api_card, c.is_owned, c.owned_count, initial_set=c.set_code, rarity=c.rarity, set_name=c.set_name, language=c.language, condition=c.condition, first_edition=c.first_edition, image_url=ps or c.image_url, image_id=c.image_id, set_price=c.price, variant_id=c.variant_id, printing_src=ps)):
                     with ui.image(img_src).classes('h-10 w-8 object-cover'):
-                         self._setup_card_tooltip(item.api_card, specific_image_id=item.image_id)
+                         self._setup_card_tooltip(item.api_card, specific_image_id=item.image_id, printing_src=printing_src)
                     ui.label(item.api_card.name).classes('truncate text-sm font-bold')
                     with ui.column().classes('gap-0'):
                         ui.label(item.set_code).classes('text-xs font-mono font-bold text-yellow-500')
@@ -1695,9 +1666,10 @@ class CollectionPage:
                 border = "border-accent" if item.is_owned else "border-gray-700"
 
                 img_src = self._collector_row_image_src(item)
+                printing_src = self._collector_printing_src(item)
 
                 with ui.card().classes(f'collection-card w-full p-0 cursor-pointer {opacity} border {border} hover:scale-105 transition-transform') \
-                        .on('click', lambda c=item: self.open_single_view(c.api_card, c.is_owned, c.owned_count, initial_set=c.set_code, rarity=c.rarity, set_name=c.set_name, language=c.language, condition=c.condition, first_edition=c.first_edition, image_url=c.image_url, image_id=c.image_id, set_price=c.price, variant_id=c.variant_id)):
+                        .on('click', lambda c=item, ps=printing_src: self.open_single_view(c.api_card, c.is_owned, c.owned_count, initial_set=c.set_code, rarity=c.rarity, set_name=c.set_name, language=c.language, condition=c.condition, first_edition=c.first_edition, image_url=ps or c.image_url, image_id=c.image_id, set_price=c.price, variant_id=c.variant_id, printing_src=ps)):
 
                     with ui.element('div').classes('relative w-full aspect-[2/3] bg-black'):
                         if img_src: ui.image(img_src).classes('w-full h-full object-cover')
@@ -1729,7 +1701,7 @@ class CollectionPage:
                         if show_price:
                             ui.label(f"€{item.price:.2f}").classes('text-xs text-green-400')
 
-                    self._setup_card_tooltip(item.api_card, specific_image_id=item.image_id)
+                    self._setup_card_tooltip(item.api_card, specific_image_id=item.image_id, printing_src=printing_src)
 
     async def switch_scope(self, scope):
         self.state['view_scope'] = scope
