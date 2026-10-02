@@ -41,7 +41,8 @@ class ConfigManager:
             "collection_show_total_qty": True,
             "collection_show_rarity_breakdown": True,
             "collection_show_language_breakdown": True,
-            "collection_show_price_preview": False
+            "collection_show_price_preview": False,
+            "collection_match_owned_artwork": False
         }
 
     def save_config(self):
@@ -110,6 +111,15 @@ class ConfigManager:
 
     def set_language(self, language: str):
         self.config["language"] = language
+        self.save_config()
+
+    def get_match_owned_artwork(self) -> bool:
+        """Whether the collection view should show owned cards using the
+        artwork of the specific variant owned (vs. the default/best artwork)."""
+        return self.config.get("collection_match_owned_artwork", False)
+
+    def set_match_owned_artwork(self, value: bool):
+        self.config["collection_match_owned_artwork"] = bool(value)
         self.save_config()
 
     def get_deck_builder_page_size(self) -> int:

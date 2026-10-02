@@ -140,6 +140,64 @@ class YugipediaService:
             logger.error(f"Error fetching set image for {set_name}: {e}")
             return None
 
+    async def get_file_image_url(self, file_name: str) -> Optional[str]:
+        """
+        Resolve the direct image URL for a known Yugipedia file.
+
+        Unlike get_set_image_url (which uses `pageimages` to find the lead
+        thumbnail of a *content* page), this uses the MediaWiki `imageinfo`
+        API to look up a specific `File:` page by its exact name and return
+        the direct URL to the original image. This is the correct call when
+        you already know the image file name, e.g.
+        "StardustDragon-CT05-EN-ScR-LE.png".
+
+        The response shape is:
+            {"query": {"pages": {"<pid>": {
+                "title": "File:...",
+                "imageinfo": [{"url": "https://.../....png", ...}]
+            }}}}
+        A missing file is reported with pid "-1" and a "missing" marker.
+        """
+        if not file_name:
+            return None
+
+        # Ensure the title is in the "File:" namespace expected by imageinfo.
+        title = file_name if file_name.startswith("File:") else f"File:{file_name}"
+
+        params = {
+            "action": "query",
+            "titles": title,
+            "prop": "imageinfo",
+            "iiprop": "url",
+            "format": "json",
+        }
+
+        try:
+            if hasattr(run, 'io_bound'):
+                response = await run.io_bound(requests.get, self.API_URL, params=params, headers=self.HEADERS)
+            else:
+                response = await asyncio.to_thread(requests.get, self.API_URL, params=params, headers=self.HEADERS)
+
+            if response.status_code == 200:
+                data = response.json()
+                pages = data.get("query", {}).get("pages", {})
+
+                for pid, page in pages.items():
+                    if pid == "-1" or "missing" in page:
+                        continue  # File does not exist on Yugipedia
+
+                    image_info = page.get("imageinfo")
+                    if image_info:
+                        url = image_info[0].get("url")
+                        if url:
+                            return url
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching file image for {file_name}: {e}")
+            return None
+
     async def get_deck_list(self, page_title: str) -> Dict[str, List[DeckCard]]:
         """
         Fetches the card list for a structure deck.

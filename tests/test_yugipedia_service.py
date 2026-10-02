@@ -189,5 +189,93 @@ CODE-EN002; Test Set 2; Common, Rare
         # So Deck B should be STRUCTURE.
         self.assertEqual(deck_map["Structure Deck: B"].deck_type, 'STRUCTURE')
 
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_get_file_image_url_success(self, mock_get):
+        # Mirrors the MediaWiki imageinfo response shape for a File: page.
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "query": {
+                "pages": {
+                    "12345": {
+                        "ns": 6,
+                        "title": "File:StardustDragon-CT05-EN-ScR-LE.png",
+                        "imageinfo": [
+                            {
+                                "url": "https://ms.yugipedia.com//StardustDragon-CT05-EN-ScR-LE.png",
+                                "descriptionurl": "https://yugipedia.com/wiki/File:StardustDragon-CT05-EN-ScR-LE.png",
+                            }
+                        ],
+                    }
+                }
+            }
+        }
+        mock_get.return_value = mock_resp
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(
+            self.service.get_file_image_url("StardustDragon-CT05-EN-ScR-LE.png")
+        )
+        loop.close()
+
+        self.assertEqual(url, "https://ms.yugipedia.com//StardustDragon-CT05-EN-ScR-LE.png")
+
+        # Verify the imageinfo API was queried with the File: title.
+        _, kwargs = mock_get.call_args
+        params = kwargs["params"]
+        self.assertEqual(params["prop"], "imageinfo")
+        self.assertEqual(params["iiprop"], "url")
+        self.assertEqual(params["titles"], "File:StardustDragon-CT05-EN-ScR-LE.png")
+
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_get_file_image_url_adds_file_prefix(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"query": {"pages": {"1": {"imageinfo": [{"url": "https://x/y.png"}]}}}}
+        mock_get.return_value = mock_resp
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        # Pass a title that already has the File: prefix — it must not be doubled.
+        loop.run_until_complete(self.service.get_file_image_url("File:Already-Prefixed.png"))
+        loop.close()
+
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"]["titles"], "File:Already-Prefixed.png")
+
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_get_file_image_url_missing(self, mock_get):
+        # Missing files come back with pid "-1" and a "missing" marker.
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "query": {
+                "pages": {
+                    "-1": {
+                        "ns": 6,
+                        "title": "File:DoesNotExist.png",
+                        "missing": "",
+                    }
+                }
+            }
+        }
+        mock_get.return_value = mock_resp
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(self.service.get_file_image_url("DoesNotExist.png"))
+        loop.close()
+
+        self.assertIsNone(url)
+
+    def test_get_file_image_url_empty_input(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(self.service.get_file_image_url(""))
+        loop.close()
+        self.assertIsNone(url)
+
+
 if __name__ == '__main__':
     unittest.main()

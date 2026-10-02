@@ -38,6 +38,10 @@ class CardViewModel:
     lowest_price: float = 0.0
     owned_languages: Set[str] = field(default_factory=set)
     owned_conditions: Set[str] = field(default_factory=set)
+    # image_id of the owned variant to display when "match owned artwork" is on.
+    # Chosen from the owned variant with the highest quantity; None if unowned
+    # or the owned variant has no specific artwork.
+    owned_image_id: Optional[int] = None
 
 @dataclass
 class CollectorRow:
@@ -63,11 +67,21 @@ def build_consolidated_vms(api_cards: List[ApiCard], owned_details: Dict[int, Co
         qty = c_card.total_quantity if c_card else 0
         owned_langs = set()
         owned_conds = set()
+        owned_image_id = None
         if c_card:
+            # Pick the artwork of the most-owned variant that has a valid image.
+            valid_image_ids = {img.id for img in card.card_images} if card.card_images else set()
+            best_variant_qty = -1
             for v in c_card.variants:
                 for e in v.entries:
                     owned_langs.add(e.language)
                     owned_conds.add(e.condition)
+                v_qty = v.total_quantity
+                if v_qty > best_variant_qty and v.image_id is not None and (
+                    not valid_image_ids or v.image_id in valid_image_ids
+                ):
+                    best_variant_qty = v_qty
+                    owned_image_id = v.image_id
 
         lowest = 0.0
         prices = []
@@ -82,7 +96,7 @@ def build_consolidated_vms(api_cards: List[ApiCard], owned_details: Dict[int, Co
         if prices:
             lowest = min(prices)
 
-        vms.append(CardViewModel(card, qty, qty > 0, lowest, owned_langs, owned_conds))
+        vms.append(CardViewModel(card, qty, qty > 0, lowest, owned_langs, owned_conds, owned_image_id))
     return vms
 
 
@@ -548,6 +562,19 @@ class CollectionPage:
 
         await self.apply_filters()
 
+    def _consolidated_display_image_id(self, vm: 'CardViewModel') -> int:
+        """Image id to show for a card in the consolidated view.
+
+        When the 'match owned artwork' setting is enabled and the card is owned
+        with a specific variant artwork, use that; otherwise fall back to the
+        card's best/default image id.
+        """
+        if (config_manager.get_match_owned_artwork()
+                and vm.is_owned
+                and vm.owned_image_id is not None):
+            return vm.owned_image_id
+        return vm.api_card.get_best_image_id()
+
     async def prepare_current_page_images(self):
         start = (self.state['page'] - 1) * self.state['page_size']
         end = min(start + self.state['page_size'], len(self.state['filtered_items']))
@@ -573,6 +600,7 @@ class CollectionPage:
             else:
                 # Consolidated View: Prioritize Best Image, but ensure fallback default is available
                 best_id = card.get_best_image_id()
+                display_id = self._consolidated_display_image_id(item)
 
                 if card.card_images:
                     # 1. Ensure default image is downloaded (fallback)
@@ -585,6 +613,12 @@ class CollectionPage:
                          img_obj = next((img for img in card.card_images if img.id == best_id), None)
                          if img_obj:
                              url_map[best_id] = img_obj.image_url_small
+
+                    # 3. If showing the owned artwork, ensure that image is downloaded
+                    if display_id != def_id:
+                         img_obj = next((img for img in card.card_images if img.id == display_id), None)
+                         if img_obj:
+                             url_map[display_id] = img_obj.image_url_small
 
         if url_map:
              await image_manager.download_batch(url_map, concurrency=10)
@@ -1426,7 +1460,7 @@ class CollectionPage:
                 with ui.card().classes(f'collection-card w-full p-0 cursor-pointer {opacity} border {border} hover:scale-105 transition-transform') \
                         .on('click', lambda c=vm: self.open_single_view(c.api_card, c.is_owned, c.owned_quantity, owned_languages=c.owned_languages)):
 
-                    img_id = card.get_best_image_id()
+                    img_id = self._consolidated_display_image_id(vm)
                     img_src = f"/images/{img_id}.jpg" if image_manager.image_exists(img_id) else (card.card_images[0].image_url_small if card.card_images else None)
 
                     with ui.element('div').classes('relative w-full aspect-[2/3] bg-black'):
@@ -1441,7 +1475,7 @@ class CollectionPage:
                         ui.label(card.name).classes('text-xs font-bold truncate w-full')
                         ui.label(card.type).classes('text-[10px] text-gray-400 truncate w-full')
 
-                    self._setup_card_tooltip(card)
+                    self._setup_card_tooltip(card, specific_image_id=img_id)
 
     def render_consolidated_list(self, items: List[CardViewModel]):
          headers = ['Image', 'Name', 'Type', 'Card Type', 'Owned']
@@ -1453,13 +1487,13 @@ class CollectionPage:
             for vm in items:
                 card = vm.api_card
                 bg = 'bg-gray-900' if not vm.is_owned else 'bg-gray-800 border border-accent'
-                img_id = card.get_best_image_id()
+                img_id = self._consolidated_display_image_id(vm)
                 img_src = f"/images/{img_id}.jpg" if image_manager.image_exists(img_id) else (card.card_images[0].image_url_small if card.card_images else None)
 
                 with ui.grid(columns=cols).classes(f'w-full {bg} p-1 items-center rounded hover:bg-gray-700 transition cursor-pointer') \
                         .on('click', lambda c=vm: self.open_single_view(c.api_card, c.is_owned, c.owned_quantity, owned_languages=c.owned_languages)):
                     with ui.image(img_src).classes('h-10 w-8 object-cover'):
-                         self._setup_card_tooltip(card)
+                         self._setup_card_tooltip(card, specific_image_id=img_id)
                     with ui.column().classes('gap-0'):
                         ui.label(card.name).classes('truncate text-sm font-bold')
                         if card.level:

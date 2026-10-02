@@ -38,6 +38,29 @@ def settings_page() -> None:
                 max=100,
             ).props('outlined').classes('w-full')
 
+            ui.separator().classes('q-my-sm')
+            ui.label('Collection display').classes('text-subtitle2')
+
+            def on_match_artwork_change(event) -> None:
+                config_manager.set_match_owned_artwork(bool(event.value))
+                ui.notify(
+                    'Owned cards will now show the artwork you own.'
+                    if event.value else
+                    'Owned cards will show the default artwork.',
+                    type='positive',
+                )
+
+            with ui.switch(
+                'Match owned card artwork',
+                value=config_manager.get_match_owned_artwork(),
+                on_change=on_match_artwork_change,
+            ):
+                ui.tooltip(
+                    'In the Collection view, show owned cards using the artwork of '
+                    'the specific variant you own instead of the default artwork. '
+                    'Reload the Collection page to apply.'
+                )
+
             async def save_application_settings() -> None:
                 try:
                     deck_size = int(deck_page_size.value)
