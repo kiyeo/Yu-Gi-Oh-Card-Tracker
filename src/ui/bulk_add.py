@@ -1061,7 +1061,7 @@ class BulkAddPage:
                 self.state.get('update_apply_cond') or
                 self.state.get('update_apply_first') or
                 self.state.get('update_apply_storage')):
-            ui.notify("Select at least one property to update (Lang, Cond, 1st, or Storage).", type='warning')
+            ui.notify("Select at least one property to update (Lang, Cond, Edition, or Storage).", type='warning')
             return
 
         async def execute():
@@ -1070,7 +1070,7 @@ class BulkAddPage:
         updates = []
         if self.state.get('update_apply_lang'): updates.append(f"Language -> {self.state['default_language']}")
         if self.state.get('update_apply_cond'): updates.append(f"Condition -> {self.state['default_condition']}")
-        if self.state.get('update_apply_first'): updates.append(f"1st Ed -> {'Yes' if self.state['default_first_ed'] else 'No'}")
+        if self.state.get('update_apply_first'): updates.append(f"Edition -> {self.state.get('default_edition', 'Unlimited Edition')}")
         if self.state.get('update_apply_storage'): updates.append(f"Storage -> {self.state['default_storage'] or 'None'}")
 
         update_str = ", ".join(updates)

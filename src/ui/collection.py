@@ -31,6 +31,24 @@ COLLECTION_MOBILE_BREAKPOINT = 639
 CARD_GRID_COLUMNS = ('grid-cols-2 sm:grid-cols-3 md:grid-cols-6 '
                      'lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12')
 
+# Short edition badge for the collection card/list views.
+# Unlimited is intentionally blank (the common default).
+EDITION_SHORT = {
+    "1st Edition": "1st",
+    "Limited Edition": "LTD",
+    "Unlimited Edition": "",
+}
+
+
+def _edition_badge(item) -> str:
+    """Short edition code for display. Prefers the row's edition string,
+    falling back to the legacy first_edition flag."""
+    ed = getattr(item, 'edition', None)
+    if ed:
+        return EDITION_SHORT.get(ed, "")
+    return "1st" if getattr(item, 'first_edition', False) else ""
+
+
 @dataclass
 class CardViewModel:
     api_card: ApiCard
@@ -1621,10 +1639,10 @@ class CollectionPage:
         cond_map = {'Mint': 'MT', 'Near Mint': 'NM', 'Played': 'PL', 'Damaged': 'DM'}
 
         if show_price:
-            headers = ['Image', 'Name', 'Set', 'Rarity', 'Cond', '1st', 'Lang', 'Price', 'Owned']
+            headers = ['Image', 'Name', 'Set', 'Rarity', 'Cond', 'Ed', 'Lang', 'Price', 'Owned']
             cols = '60px 4fr 2fr 1.5fr 0.8fr 0.5fr 0.5fr 1fr 0.8fr'
         else:
-            headers = ['Image', 'Name', 'Set', 'Rarity', 'Cond', '1st', 'Lang', 'Owned']
+            headers = ['Image', 'Name', 'Set', 'Rarity', 'Cond', 'Ed', 'Lang', 'Owned']
             cols = '60px 4fr 2fr 1.5fr 0.8fr 0.5fr 0.5fr 0.8fr'
 
         with ui.column().classes('w-full gap-1'):
@@ -1648,7 +1666,7 @@ class CollectionPage:
                     ui.label(item.rarity).classes('text-xs')
 
                     ui.label(cond_map.get(item.condition, item.condition[:2].upper())).classes('text-xs font-bold text-yellow-500')
-                    ui.label("1st" if item.first_edition else "").classes('text-xs font-bold text-orange-400')
+                    ui.label(_edition_badge(item)).classes('text-xs font-bold text-orange-400')
 
                     lang_code = item.language.strip().upper()
                     country_code = LANGUAGE_COUNTRY_MAP.get(lang_code)
@@ -1699,7 +1717,7 @@ class CollectionPage:
                              ui.label(f"{item.owned_count}").classes('absolute top-1 right-1 bg-accent text-dark font-bold px-2 rounded-full text-xs')
 
                         cond_short = cond_map.get(item.condition, item.condition[:2].upper())
-                        ed_text = "1st" if item.first_edition else ""
+                        ed_text = _edition_badge(item)
 
                         with ui.row().classes('absolute bottom-0 left-0 bg-black/80 text-white text-[10px] px-1 gap-1 items-center rounded-tr'):
                             ui.label(cond_short).classes('font-bold text-yellow-500')
