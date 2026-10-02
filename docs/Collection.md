@@ -34,5 +34,14 @@ Clicking on any card opens the **Single Card View**.
 This dialog allows precise management of a card's inventory.
 - **Add/Remove**: Adjust quantity for specific sets.
 - **Variant Selection**: Choose Set Code, Rarity, Condition, Language, and Edition.
+- **Edition**: Each copy records its print edition — **1st Edition**, **Unlimited Edition**, or **Limited Edition**. Copies that differ only by edition are tracked as separate stacks. In the card badges, 1st Edition shows as `1st`, Limited as `LTD`, and Unlimited is left blank.
 - **Storage**: Assign the card to a specific Box or Binder directly from this view.
 - **Save**: Commits changes to your collection.
+
+## 4. Owned printing artwork (optional)
+
+Enable **Match owned printing layout** in **Settings → Application** to display owned cards using the actual image of the printing you own (resolved from Yugipedia by set code), which reflects that era's card layout/frame rather than the generic illustration.
+
+- Run **Settings → Data management → Download owned printing images** first to cache them; this needs a network connection.
+- Cards without a cached printing image fall back to the default artwork.
+- Reload the Collection page after toggling the setting.

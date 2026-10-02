@@ -32,8 +32,9 @@ OpenYuGi is a full workshop, not a single tool. Here is what lives inside — ea
 
 - Create separate collections for personal cards, trades, sealed products, or any workflow you like.
 - Track printings by set code, rarity, and artwork rather than collapsing every copy into one record.
-- Track physical entries by condition, language, first-edition status, storage location, quantity, purchase price, purchase date, and market value.
+- Track physical entries by condition, language, edition (1st / Unlimited / Limited), storage location, quantity, purchase price, purchase date, and market value.
 - Switch between **Consolidated / Player** mode and **Collector / Variant** mode.
+- Optionally display owned cards with the era-accurate layout of the exact printing you own, resolved from Yugipedia by set code (the *Match owned printing layout* option).
 - Search, filter, sort, and paginate large collections by card and printing metadata.
 - Review total quantity, unique cards, unique variants, estimated value, rarity distribution, language distribution, and completion metrics on the dashboard.
 - Undo supported collection and batch operations through the local changelog system. ↩️
@@ -157,6 +158,18 @@ python main.py
 
 NiceGUI normally opens the browser automatically. Otherwise, visit <http://localhost:8084>, sign in with `admin` / `admin`, and change the credentials in Settings. Stop the server with `Ctrl+C` in the terminal.
 
+### 🐳 Run with Docker (optional)
+
+Prefer containers? A self-contained Compose file is included:
+
+```bash
+docker compose -f docker-compose.standalone.yml up --build -d
+```
+
+Then visit <http://localhost:8084>. For the NAS-backed setup, reverse-proxy and
+WebSocket notes, and the CPU-only image details, see the
+[Deployment guide](docs/Deployment.md).
+
 ## 🧭 First-run setup
 
 Open **Settings** after signing in. The data-management actions let you prepare only the caches you need:
@@ -167,7 +180,8 @@ Open **Settings** after signing in. The data-management actions let you prepare 
 4. **Download Yugipedia set images** fills or replaces pack artwork from Yugipedia.
 5. **Download low-res card images** prepares a compact local card-image cache.
 6. **Download high-res card images** uses substantially more time, bandwidth, and storage.
-7. **Generate sample collection** creates example data for exploring the interface.
+7. **Download owned printing images** fetches the era-accurate image of each printing you own from Yugipedia (needed for the *Match owned printing layout* option).
+8. **Generate sample collection** creates example data for exploring the interface.
 
 OpenYuGi also downloads individual card images lazily when they are requested, so a complete image download is optional. Once the required metadata and images are cached, routine collection and deck work can continue **offline**. Features that refresh external data still require a connection.
 
@@ -276,6 +290,7 @@ There is no SQL or NoSQL database. Persistent application state is stored in ord
 | `data/db/` | Cached card and set metadata |
 | `data/images/` | Lazy or bulk-downloaded card images and art-match source images |
 | `data/sets/` | Cached set artwork |
+| `data/printings/` | Cached era-accurate per-printing card images (owned printing layout) |
 | `data/banlists/` | Downloaded and custom banlists |
 | `data/prices/` | Local pricing caches |
 | `data/changelogs/` | Collection and deck operation history used by undo workflows |
@@ -308,7 +323,7 @@ Collection
         └── CollectionEntry        condition + language + edition + location
 ```
 
-This structure is what lets OpenYuGi keep alternate artworks distinct for collectors while still resolving gameplay counts back to the base card. The complete model — field-by-field notes and an annotated collection JSON example — is documented in **[Architecture & Data Model](docs/Architecture.md#collection-data-model)**.
+This structure is what lets OpenYuGi keep alternate artworks distinct for collectors while still resolving gameplay counts back to the base card. Each `CollectionEntry` records an explicit **edition** (`1st Edition`, `Unlimited Edition`, or `Limited Edition`); copies that differ only by edition are tracked as separate stacks. The complete model — field-by-field notes and an annotated collection JSON example — is documented in **[Architecture & Data Model](docs/Architecture.md#collection-data-model)**.
 
 > ⚠️ Do not edit a collection file while OpenYuGi is running; the next application save may overwrite the external change.
 
@@ -376,6 +391,8 @@ python -m pytest tests/
 ```
 
 Tests must isolate user data in temporary directories. Mock NiceGUI, OpenCV, network requests, and other optional or heavyweight integrations where the test does not specifically exercise them. Never write test fixtures into the real `data/` directory.
+
+For running the suite inside the Docker image (useful because of the heavy torch/OCR dependencies) and the verification approach used for recent features, see the [Testing guide](docs/Testing.md).
 
 ### Build a distributable application
 
@@ -472,6 +489,8 @@ The README is the front door; these guides are the rooms. 🚪
 | --- | --- |
 | [Documentation home](docs/Home.md) | Short index of feature documentation |
 | [Architecture & Data Model](docs/Architecture.md) | Stack, implementation rules, transaction flow, API, and the on-disk data model |
+| [Deployment (Docker)](docs/Deployment.md) | CPU-only image, standalone and NAS/CIFS Compose files, reverse-proxy and WebSocket notes |
+| [Testing](docs/Testing.md) | Running the test suite (including inside Docker) and the verification approach |
 | [Dashboard](docs/Dashboard.md) | Metrics, charts, collection selection, and navigation |
 | [Collection](docs/Collection.md) | Inventory views, filtering, values, and entry editing |
 | [Storage](docs/Storage.md) | Boxes, binders, location details, and card movement |

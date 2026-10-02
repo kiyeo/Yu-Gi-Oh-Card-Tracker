@@ -61,6 +61,19 @@ The `ScannerManager` performs processing on a dedicated worker thread. It places
 
 For the full scanner pipeline, matching algorithm, and Debug Lab reference, see [Card Scanning](CardScanning.md).
 
+## Owned printing images (era-accurate layouts)
+
+OpenYuGi can display owned cards using the actual image of the specific printing you own, which reflects that era's card layout/frame, instead of the generic illustration from the primary card API.
+
+- **Resolution**: `YugipediaService.get_set_printing_image_url(card_name, set_code, language, rarity, edition)` searches the Yugipedia `File:` namespace using the set-code prefix (e.g. `TDGS` from `TDGS-EN040`) and the card name, then selects the best file by:
+  - rarity code embedded in the file name (e.g. `-UtR-` for Ultimate Rare),
+  - edition code (`1E` / `UE` / `LE`),
+  - region fallback (`EN → NA → EU → …`, since older sets used region codes), and
+  - exclusion of novelty/non-standard variants (`GC` Giant Card, `VG` Video Game promo, `Manga`, `Anime`, etc.), which are only used if no standard file exists.
+- **Caching**: resolved images are stored under `data/printings/` (served at `/printings`) keyed by set code, language, rarity, and edition, so different printings do not collide. See `ImageManager.get_printing_image_url(...)` / `ensure_printing_image(...)`.
+- **Batch population**: `printing_image_service.download_owned_printing_images()` iterates every owned printing across all collections and caches its image. It is exposed in **Settings → Data management → Download owned printing images**.
+- **Enable**: the **Match owned printing layout** toggle (Settings → Application) switches the Collection view to these images; cards without a cached printing image fall back to the default artwork. Controlled by `config_manager.get_match_owned_artwork()`.
+
 ## Collection data model
 
 The collection hierarchy separates card identity, printing identity, and physical copies:
@@ -74,8 +87,14 @@ Collection
 
 - `CollectionCard` groups an abstract card identity by API card ID.
 - `CollectionVariant` identifies a printing. Its deterministic ID incorporates card ID, set code, rarity, and image ID so alternate artwork remains distinct.
-- `CollectionEntry` represents a physical stack. Entries with the same condition, language, first-edition flag, and storage location share one quantity.
+- `CollectionEntry` represents a physical stack. Entries with the same condition, language, **edition**, and storage location share one quantity.
 - `ApiCard` reference objects come from the local API cache and are joined at runtime. They are not serialized into a user's collection.
+
+### Edition field
+
+`CollectionEntry.edition` is a string with three values: `"1st Edition"`, `"Unlimited Edition"`, or `"Limited Edition"` (default `"Unlimited Edition"`). It is the source of truth for a copy's print edition and participates in entry identity (two copies that differ only by edition are distinct stacks).
+
+For backward compatibility the legacy boolean `first_edition` is retained as a synced mirror: a Pydantic `model_validator` reconciles the two fields on load, so existing collection files (which only have `first_edition`) migrate transparently — `first_edition: true → edition: "1st Edition"`, `false → "Unlimited Edition"`. New code should prefer `edition`; `first_edition` remains available for callers (scanner, import) that have not been extended to the three-state model.
 
 A shortened collection file looks like this:
 
@@ -104,6 +123,7 @@ A shortened collection file looks like this:
             {
               "condition": "Near Mint",
               "language": "EN",
+              "edition": "1st Edition",
               "first_edition": true,
               "quantity": 2,
               "storage_location": "Binder 1",

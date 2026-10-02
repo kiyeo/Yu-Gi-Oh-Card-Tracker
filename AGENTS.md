@@ -43,8 +43,10 @@ The data structure is hierarchical to support aggregation and variant management
     *   Key: `variant_id` (Hash of card_id + set_code + rarity + image_id).
     *   *Critical*: Image ID is part of the key to support Alt Arts in same set.
 4.  **`CollectionEntry`**: A physical stack of cards.
-    *   Fields: `condition`, `language`, `first_edition`, `storage_location`, `quantity`.
-    *   *Logic*: Entries are unique by (Cond + Lang + 1st + Storage). Adding a 2nd "Near Mint EN" card increments `quantity` of the existing entry, it does NOT create a new entry.
+    *   Fields: `condition`, `language`, `edition`, `first_edition`, `storage_location`, `quantity`.
+    *   `edition`: String — `"1st Edition"`, `"Unlimited Edition"`, or `"Limited Edition"` (default `"Unlimited Edition"`). **Source of truth** for print edition.
+    *   `first_edition`: Legacy boolean, kept as a synced mirror of `edition == "1st Edition"` via a `model_validator` on `CollectionEntry`. Old collection files (boolean-only) migrate transparently on load. Prefer `edition` in new code; `first_edition` is still honored by callers not yet migrated (scanner, import).
+    *   *Logic*: Entries are unique by (Cond + Lang + **Edition** + Storage). Adding a 2nd "Near Mint EN Unlimited" card increments `quantity` of the existing entry; a Limited Edition copy of the same card is a **separate** entry.
 
 ### 3.2. Reference Data (`ApiCard`)
 *   `ApiCard` objects are transient (loaded from `card_db.json` cache).
@@ -86,6 +88,13 @@ An Event-Driven State Machine.
     *   `{id}_high.jpg`: High-Res.
     *   `{id}_cropped.jpg`: Art-crop only.
 *   **Flags**: Caches country flags (e.g., `data/flags/de.png`) for language UI.
+
+### 4.4. Owned Printing Images (`src/services/printing_image_service.py` + `yugipedia_service.py`)
+*   **Purpose**: Show owned cards using the actual image of the owned *printing* (era-accurate card layout) instead of the generic API illustration.
+*   **Resolver**: `YugipediaService.get_set_printing_image_url(card_name, set_code, language, rarity, edition)` searches the Yugipedia `File:` namespace by set-code prefix + card name and selects by rarity code (`-UtR-`), edition code (`1E`/`UE`/`LE`), region fallback (`EN→NA→EU→…`), and **excludes novelty variants** (`GC`, `VG`, `Manga`, `Anime`, …) unless no standard file exists. `return_meta=True` also reports the resolved edition.
+*   **Cache**: `ImageManager.ensure_printing_image(...)` stores under `data/printings/` (served `/printings`), keyed by set_code + language + rarity + edition.
+*   **Batch**: `download_owned_printing_images()` populates the cache for every owned printing. Exposed in Settings → Data management.
+*   **Gate**: `config_manager.get_match_owned_artwork()` toggles the Collection view between printing images and default artwork. Pitfall: this is a batch/opt-in feature — do NOT fetch per-page on render (network on the event loop).
 
 ---
 

@@ -23,6 +23,8 @@ Welcome to the OpenYuGi Wiki! This documentation covers every aspect of the appl
 
 ### Under the Hood
 - **[Architecture & Data Model](Architecture.md)**: Technology stack, implementation rules, transaction flow, the authenticated API, and the on-disk collection data model.
+- **[Deployment (Docker)](Deployment.md)**: CPU-only image, standalone and NAS/CIFS Compose files, reverse-proxy/WebSocket notes.
+- **[Testing](Testing.md)**: Running the suite (including inside the Docker image) and the verification approach.
 
 ---
 

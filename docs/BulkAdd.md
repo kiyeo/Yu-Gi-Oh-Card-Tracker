@@ -14,7 +14,7 @@ The screen is split into two halves:
 2. **Set Defaults**: In the header, configure the default properties for new cards:
    - **Language**: e.g., English (EN).
    - **Condition**: e.g., Near Mint.
-   - **1st Edition**: Check if cards are 1st Ed.
+   - **Edition**: Choose **1st Edition**, **Unlimited Edition**, or **Limited Edition** from the dropdown.
 3. **Find Cards**: Search for a card in the Left Pane.
 4. **Add**:
    - **Right-Click**: Right-click a card in the Library to add 1 copy with default settings.
@@ -22,7 +22,7 @@ The screen is split into two halves:
    - **"Add All"**: Adds all currently filtered cards from the Library to the Collection.
 
 ## 3. Editing in Bulk
-- **Update**: Select cards in the Right Pane (using filters), check the properties you want to change (Lang, Cond, 1st) in the header, and click **Update**. This applies the new default settings to all visible collection entries.
+- **Update**: Select cards in the Right Pane (using filters), check the properties you want to change (Lang, Cond, Edition, Storage) in the header, and click **Update**. This applies the new default settings to all visible collection entries.
 - **Remove**: Right-click a card in the Right Pane to remove it, or drag it back to the Left Pane.
 
 ## 4. Structure Decks
