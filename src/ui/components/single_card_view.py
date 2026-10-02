@@ -4,7 +4,7 @@ from src.services.ygo_api import ApiCard, ygo_service
 from src.services.image_manager import image_manager
 from src.services.pricing_service import pricing_service
 from src.core.utils import transform_set_code, generate_variant_id, normalize_set_code, extract_language_code, LANGUAGE_COUNTRY_MAP
-from src.core.constants import CARD_CONDITIONS
+from src.core.constants import CARD_CONDITIONS, RARITY_RANKING
 from typing import List, Optional, Dict, Set, Callable, Any
 import logging
 import asyncio
@@ -18,12 +18,11 @@ import base64
 logger = logging.getLogger(__name__)
 
 SUPPORTED_LANGUAGES = ['EN', 'DE', 'FR', 'IT', 'ES', 'PT']
-STANDARD_RARITIES = [
-    'Common', 'Rare', 'Super Rare', 'Ultra Rare', 'Secret Rare',
-    'Ultimate Rare', 'Ghost Rare', 'Starlight Rare', "Collector's Rare",
-    'Prismatic Secret Rare', 'Platinum Secret Rare', 'Quarter Century Secret Rare',
-    'Gold Rare', 'Premium Gold Rare'
-]
+# Selectable rarities for the card editor, sourced from the global ranking so
+# the list stays consistent with filtering/sorting. Niche internal entries are
+# excluded from the picker.
+_RARITY_PICKER_EXCLUDE = {"Short Print", "Duel Terminal Rare Parallel Rare"}
+STANDARD_RARITIES = [r for r in RARITY_RANKING if r not in _RARITY_PICKER_EXCLUDE]
 
 class SingleCardView:
     @staticmethod

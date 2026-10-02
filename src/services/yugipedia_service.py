@@ -27,27 +27,83 @@ class YugipediaService:
     API_URL = "https://yugipedia.com/api.php"
     HEADERS = {"User-Agent": "YgoCollectionManager/1.0"}
 
-    # Rarity Mapping (Yugipedia Abbr -> Full Name)
+    # Rarity Mapping (Yugipedia Abbreviation -> Full Name).
+    # Source of truth for abbreviations is the official Yugipedia rarity codes.
     RARITY_MAP = {
+        # Base rarities
         "C": "Common",
+        "NR": "Normal Rare",
         "R": "Rare",
         "SR": "Super Rare",
         "UR": "Ultra Rare",
+        # Secret family
         "ScR": "Secret Rare",
-        "SE": "Secret Rare",
-        "UScR": "Ultimate Rare", # Confirm mappings as needed
-        "UtR": "Ultimate Rare",
-        "GR": "Gold Rare",
-        "GScR": "Gold Secret Rare",
+        "UScR": "Ultra Secret Rare",
+        "ScUR": "Secret Ultra Rare",
         "PScR": "Prismatic Secret Rare",
+        "EScR": "Extra Secret Rare",
+        "PlScR": "Platinum Secret Rare",
+        "20ScR": "20th Secret Rare",
+        "10000ScR": "10000 Secret Rare",
         "QCScR": "Quarter Century Secret Rare",
-        "QCC": "Quarter Century Secret Rare",
-        # Add full names to map to themselves to be safe
+        # Other premium rarities
+        "UtR": "Ultimate Rare",
+        "CR": "Collector's Rare",
+        "StR": "Starlight Rare",
+        "GR": "Ghost Rare",
+        "HGR": "Holographic Rare",
+        # Parallel family
+        "PR": "Parallel Rare",
+        "NPR": "Normal Parallel Rare",
+        "SPR": "Super Parallel Rare",
+        "UPR": "Ultra Parallel Rare",
+        "ScPR": "Secret Parallel Rare",
+        "EScPR": "Extra Secret Parallel Rare",
+        "HGPR": "Holographic Parallel Rare",
+        # Gold / platinum / premium
+        "GUR": "Gold Rare",
+        "GScR": "Gold Secret Rare",
+        "PGR": "Premium Gold Rare",
+        "PlR": "Platinum Rare",
+        # Foil variants
+        "SFR": "Starfoil Rare",
+        "MSR": "Mosaic Rare",
+        "SHR": "Shatterfoil Rare",
+
+        # Full names mapped to themselves so already-expanded values pass through.
         "Common": "Common",
+        "Normal Rare": "Normal Rare",
         "Rare": "Rare",
         "Super Rare": "Super Rare",
         "Ultra Rare": "Ultra Rare",
         "Secret Rare": "Secret Rare",
+        "Ultra Secret Rare": "Ultra Secret Rare",
+        "Secret Ultra Rare": "Secret Ultra Rare",
+        "Prismatic Secret Rare": "Prismatic Secret Rare",
+        "Extra Secret Rare": "Extra Secret Rare",
+        "Platinum Secret Rare": "Platinum Secret Rare",
+        "20th Secret Rare": "20th Secret Rare",
+        "10000 Secret Rare": "10000 Secret Rare",
+        "Quarter Century Secret Rare": "Quarter Century Secret Rare",
+        "Ultimate Rare": "Ultimate Rare",
+        "Collector's Rare": "Collector's Rare",
+        "Starlight Rare": "Starlight Rare",
+        "Ghost Rare": "Ghost Rare",
+        "Holographic Rare": "Holographic Rare",
+        "Parallel Rare": "Parallel Rare",
+        "Normal Parallel Rare": "Normal Parallel Rare",
+        "Super Parallel Rare": "Super Parallel Rare",
+        "Ultra Parallel Rare": "Ultra Parallel Rare",
+        "Secret Parallel Rare": "Secret Parallel Rare",
+        "Extra Secret Parallel Rare": "Extra Secret Parallel Rare",
+        "Holographic Parallel Rare": "Holographic Parallel Rare",
+        "Gold Rare": "Gold Rare",
+        "Gold Secret Rare": "Gold Secret Rare",
+        "Premium Gold Rare": "Premium Gold Rare",
+        "Platinum Rare": "Platinum Rare",
+        "Starfoil Rare": "Starfoil Rare",
+        "Mosaic Rare": "Mosaic Rare",
+        "Shatterfoil Rare": "Shatterfoil Rare",
     }
 
     async def get_all_decks(self) -> List[StructureDeck]:

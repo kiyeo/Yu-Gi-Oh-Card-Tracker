@@ -352,6 +352,37 @@ CODE-EN002; Test Set 2; Common, Rare
         loop.close()
         self.assertIsNone(url)
 
+    def test_map_rarity_corrected_and_complete(self):
+        s = self.service
+        # Previously-incorrect mappings now fixed.
+        self.assertEqual(s._map_rarity("UScR"), "Ultra Secret Rare")   # was "Ultimate Rare"
+        self.assertEqual(s._map_rarity("GR"), "Ghost Rare")            # was "Gold Rare"
+        self.assertEqual(s._map_rarity("GUR"), "Gold Rare")            # Gold Rare is GUR
+        expected = {
+            "C": "Common", "NR": "Normal Rare", "R": "Rare", "SR": "Super Rare",
+            "UR": "Ultra Rare", "ScR": "Secret Rare", "ScUR": "Secret Ultra Rare",
+            "PScR": "Prismatic Secret Rare", "EScR": "Extra Secret Rare",
+            "PlScR": "Platinum Secret Rare", "20ScR": "20th Secret Rare",
+            "10000ScR": "10000 Secret Rare", "QCScR": "Quarter Century Secret Rare",
+            "UtR": "Ultimate Rare", "CR": "Collector's Rare", "StR": "Starlight Rare",
+            "HGR": "Holographic Rare", "PR": "Parallel Rare", "NPR": "Normal Parallel Rare",
+            "SPR": "Super Parallel Rare", "UPR": "Ultra Parallel Rare",
+            "ScPR": "Secret Parallel Rare", "EScPR": "Extra Secret Parallel Rare",
+            "HGPR": "Holographic Parallel Rare", "GScR": "Gold Secret Rare",
+            "PGR": "Premium Gold Rare", "PlR": "Platinum Rare", "SFR": "Starfoil Rare",
+            "MSR": "Mosaic Rare", "SHR": "Shatterfoil Rare",
+        }
+        for abbr, full in expected.items():
+            self.assertEqual(s._map_rarity(abbr), full, f"{abbr} should map to {full}")
+
+    def test_map_rarity_full_names_passthrough(self):
+        s = self.service
+        for full in ["Secret Rare", "Ultra Secret Rare", "Ghost Rare", "Platinum Rare"]:
+            self.assertEqual(s._map_rarity(full), full)
+
+    def test_map_rarity_unknown_passthrough(self):
+        self.assertEqual(self.service._map_rarity("WeirdRarity"), "WeirdRarity")
+
 
 if __name__ == '__main__':
     unittest.main()
