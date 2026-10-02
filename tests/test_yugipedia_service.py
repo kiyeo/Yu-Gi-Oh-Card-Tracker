@@ -352,6 +352,54 @@ CODE-EN002; Test Set 2; Common, Rare
         loop.close()
         self.assertIsNone(url)
 
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_get_set_printing_image_url_prefers_matching_rarity(self, mock_get):
+        # Same set/region has multiple rarities; must pick the owned rarity's file.
+        search_resp = MagicMock()
+        search_resp.status_code = 200
+        search_resp.json.return_value = {
+            "query": {"search": [
+                {"title": "File:CyberEsper-CDIP-EN-C-1E.jpg"},
+                {"title": "File:CyberEsper-CDIP-EN-UtR-1E.jpg"},
+                {"title": "File:CyberEsper-CDIP-EN-SR-1E.jpg"},
+            ]}
+        }
+        imageinfo_resp = MagicMock()
+        imageinfo_resp.status_code = 200
+        imageinfo_resp.json.return_value = {
+            "query": {"pages": {"1": {"imageinfo": [
+                {"url": "https://ms.yugipedia.com//CyberEsper-CDIP-EN-UtR-1E.jpg"}
+            ]}}}
+        }
+        mock_get.side_effect = [search_resp, imageinfo_resp]
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(
+            self.service.get_set_printing_image_url(
+                "Cyber Esper", "CDIP-EN045", "EN", rarity="Ultimate Rare"
+            )
+        )
+        loop.close()
+
+        self.assertEqual(url, "https://ms.yugipedia.com//CyberEsper-CDIP-EN-UtR-1E.jpg")
+        second_params = mock_get.call_args_list[1].kwargs["params"]
+        self.assertEqual(second_params["titles"], "File:CyberEsper-CDIP-EN-UtR-1E.jpg")
+
+    def test_rarity_code_from_filename(self):
+        s = self.service
+        self.assertEqual(
+            s._rarity_code_from_filename("File:CyberEsper-CDIP-EN-UtR-1E.jpg", "CDIP", "EN"),
+            "UtR",
+        )
+        self.assertEqual(
+            s._rarity_code_from_filename("File:Sogen-SDK-NA-C-1E.jpg", "SDK", "NA"),
+            "C",
+        )
+        self.assertIsNone(
+            s._rarity_code_from_filename("File:Other-ABC-EN-R.png", "CDIP", "EN")
+        )
+
     def test_map_rarity_corrected_and_complete(self):
         s = self.service
         # Previously-incorrect mappings now fixed.

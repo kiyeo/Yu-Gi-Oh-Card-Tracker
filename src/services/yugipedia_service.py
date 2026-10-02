@@ -7,6 +7,8 @@ from nicegui import run
 import asyncio
 from datetime import datetime
 
+from src.core.constants import RARITY_ABBREVIATIONS
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -272,11 +274,31 @@ class YugipediaService:
         name (keeping letters/digits). Mirror that so our search matches."""
         return re.sub(r"[^A-Za-z0-9]", "", card_name or "")
 
+    @staticmethod
+    def _rarity_code_from_filename(title: str, prefix: str, region: str) -> Optional[str]:
+        """Extract the rarity code segment from a Yugipedia card image file name.
+
+        File names follow ``CardName-PREFIX-REGION-RARITY-EDITION[-MISC].ext``.
+        The token immediately after ``-PREFIX-REGION-`` is the rarity code,
+        e.g. ``UtR`` in ``CyberEsper-CDIP-EN-UtR-1E.jpg``.
+        """
+        base = title[len("File:"):] if title.startswith("File:") else title
+        # Drop extension.
+        base = re.sub(r"\.[A-Za-z0-9]+$", "", base)
+        marker = f"-{prefix}-{region}-"
+        idx = base.find(marker)
+        if idx == -1:
+            return None
+        rest = base[idx + len(marker):]
+        parts = rest.split("-")
+        return parts[0] if parts and parts[0] else None
+
     async def get_set_printing_image_url(
         self,
         card_name: str,
         set_code: str,
         language: str = "EN",
+        rarity: Optional[str] = None,
     ) -> Optional[str]:
         """Resolve the direct image URL of a card's printing in a given set.
 
@@ -285,9 +307,12 @@ class YugipediaService:
         direct image URL. The returned image depicts the actual printing — and
         therefore the era-appropriate card layout/frame.
 
+        Rarity: when provided (full name, e.g. "Ultimate Rare"), the file whose
+        encoded rarity code matches (e.g. ``-UtR-``) is preferred, since a card
+        can have multiple rarities in the same set with different images.
+
         Edition preference: 1st Edition (``-1E``) is preferred over Unlimited
-        (``-UE``) or no-edition files, since the user asked for the oldest /
-        first-edition layout.
+        (``-UE``) or no-edition files.
 
         Returns None if no matching file can be found.
         """
@@ -301,6 +326,7 @@ class YugipediaService:
         name_key = self._normalize_card_name_for_file(card_name)
         lang = (language or "EN").strip().upper()
         regions = self._REGION_FALLBACKS.get(lang, [lang])
+        target_rarity_code = RARITY_ABBREVIATIONS.get(rarity) if rarity else None
 
         params = {
             "action": "query",
@@ -337,19 +363,38 @@ class YugipediaService:
                 region_files = [t for t in candidates if f"-{prefix}-{region}-" in t]
                 if not region_files:
                     return None
-                # Prefer 1st Edition, then anything else; stable order otherwise.
-                first_ed = [t for t in region_files if "-1E" in t]
-                return (first_ed or region_files)[0]
+
+                # Prefer files whose encoded rarity code matches the owned rarity.
+                pool = region_files
+                if target_rarity_code:
+                    rarity_matches = [
+                        t for t in region_files
+                        if self._rarity_code_from_filename(t, prefix, region) == target_rarity_code
+                    ]
+                    if rarity_matches:
+                        pool = rarity_matches
+
+                # Within the chosen pool, prefer 1st Edition.
+                first_ed = [t for t in pool if "-1E" in t]
+                return (first_ed or pool)[0]
 
             chosen = None
             for region in regions:
                 chosen = pick_for_region(region)
                 if chosen:
                     break
-            # Last resort: any candidate (prefer 1st edition).
+            # Last resort: any candidate (prefer rarity match, then 1st edition).
             if not chosen:
-                first_ed = [t for t in candidates if "-1E" in t]
-                chosen = (first_ed or candidates)[0]
+                pool = candidates
+                if target_rarity_code:
+                    rarity_matches = [
+                        t for t in candidates
+                        if f"-{target_rarity_code}-" in t
+                    ]
+                    if rarity_matches:
+                        pool = rarity_matches
+                first_ed = [t for t in pool if "-1E" in t]
+                chosen = (first_ed or pool)[0]
 
             # chosen is a "File:..." title; resolve to a direct URL.
             return await self.get_file_image_url(chosen)

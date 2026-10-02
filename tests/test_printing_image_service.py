@@ -28,29 +28,31 @@ def _collection():
 
 
 class TestCollectOwnedPrintings(unittest.TestCase):
-    def test_collects_distinct_set_code_language_pairs(self):
+    def test_collects_distinct_set_code_language_rarity_tuples(self):
         with patch.object(svc.persistence, 'list_collections', return_value=['c.json']), \
              patch.object(svc.persistence, 'load_collection', return_value=_collection()):
             pending = svc._collect_owned_printings()
 
-        # Stardust owned in EN and DE; the empty set code and qty-0 variants are excluded.
-        self.assertEqual(set(pending.keys()), {("TDGS-EN040", "EN"), ("TDGS-EN040", "DE")})
-        self.assertEqual(pending[("TDGS-EN040", "EN")], "Stardust Dragon")
+        self.assertEqual(set(pending.keys()), {
+            ("TDGS-EN040", "EN", "Ultra Rare"),
+            ("TDGS-EN040", "DE", "Ultra Rare"),
+        })
+        self.assertEqual(pending[("TDGS-EN040", "EN", "Ultra Rare")], "Stardust Dragon")
 
 
 class TestDownloadOwnedPrintingImages(unittest.TestCase):
     def test_summary_counts_downloaded_and_skipped(self):
-        pending = {("TDGS-EN040", "EN"): "Stardust Dragon",
-                   ("LOB-EN005", "EN"): "Dark Magician"}
+        pending = {("TDGS-EN040", "EN", "Ultra Rare"): "Stardust Dragon",
+                   ("LOB-EN005", "EN", "Ultra Rare"): "Dark Magician"}
 
-        async def fake_resolve(name, set_code, lang):
-            return f"https://img/{set_code}-{lang}.png"
+        async def fake_resolve(name, set_code, lang, rarity=None):
+            return f"https://img/{set_code}-{lang}-{rarity}.png"
 
-        async def fake_ensure(set_code, lang, url):
+        async def fake_ensure(set_code, lang, url, rarity=""):
             return f"/local/{set_code}"
 
         # One already cached (LOB), one needs download (TDGS).
-        def exists(set_code, lang):
+        def exists(set_code, lang, rarity=""):
             return set_code == "LOB-EN005"
 
         with patch.object(svc, '_collect_owned_printings', return_value=pending), \

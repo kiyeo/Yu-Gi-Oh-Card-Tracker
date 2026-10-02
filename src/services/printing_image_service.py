@@ -20,13 +20,12 @@ logger = logging.getLogger(__name__)
 _DEFAULT_LANGUAGE = "EN"
 
 
-def _collect_owned_printings() -> Dict[Tuple[str, str], str]:
-    """Return {(set_code, language_upper): card_name} for all owned printings.
-
-    Deduplicated across every collection file. Only printings with a real set
-    code are included (custom/unknown entries are skipped).
+def _collect_owned_printings() -> Dict[Tuple[str, str, str], str]:
+    """Return {(set_code, language_upper, rarity): card_name} for all owned
+    printings, deduplicated across every collection file. Only printings with a
+    real set code are included (custom/unknown entries are skipped).
     """
-    pending: Dict[Tuple[str, str], str] = {}
+    pending: Dict[Tuple[str, str, str], str] = {}
 
     for filename in persistence.list_collections():
         try:
@@ -44,6 +43,7 @@ def _collect_owned_printings() -> Dict[Tuple[str, str], str]:
                 set_code = (variant.set_code or "").strip()
                 if not set_code or set_code in ("N/A",):
                     continue
+                rarity = (variant.rarity or "").strip()
                 # Languages actually owned for this printing.
                 languages = {
                     (e.language or _DEFAULT_LANGUAGE).strip().upper()
@@ -53,7 +53,7 @@ def _collect_owned_printings() -> Dict[Tuple[str, str], str]:
                 if not languages:
                     continue
                 for lang in languages:
-                    key = (set_code, lang)
+                    key = (set_code, lang, rarity)
                     pending.setdefault(key, card_name)
 
     return pending
@@ -73,9 +73,9 @@ async def download_owned_printing_images(
 
     # Skip ones already cached.
     todo = {
-        (set_code, lang): name
-        for (set_code, lang), name in pending.items()
-        if not image_manager.printing_image_exists(set_code, lang)
+        (set_code, lang, rarity): name
+        for (set_code, lang, rarity), name in pending.items()
+        if not image_manager.printing_image_exists(set_code, lang, rarity)
     }
 
     total = len(todo)
@@ -92,19 +92,19 @@ async def download_owned_printing_images(
     completed = 0
     lock = asyncio.Lock()
 
-    async def _one(set_code: str, lang: str, card_name: str):
+    async def _one(set_code: str, lang: str, rarity: str, card_name: str):
         nonlocal completed
         async with semaphore:
             try:
-                url = await service.get_set_printing_image_url(card_name, set_code, lang)
-                if url and await image_manager.ensure_printing_image(set_code, lang, url):
+                url = await service.get_set_printing_image_url(card_name, set_code, lang, rarity)
+                if url and await image_manager.ensure_printing_image(set_code, lang, url, rarity):
                     async with lock:
                         summary["downloaded"] += 1
                 else:
                     async with lock:
                         summary["failed"] += 1
             except Exception as e:
-                logger.debug(f"Printing fetch failed {card_name}/{set_code}/{lang}: {e}")
+                logger.debug(f"Printing fetch failed {card_name}/{set_code}/{lang}/{rarity}: {e}")
                 async with lock:
                     summary["failed"] += 1
             finally:
@@ -114,7 +114,8 @@ async def download_owned_printing_images(
                         progress_callback(completed / total)
 
     await asyncio.gather(*[
-        _one(set_code, lang, name) for (set_code, lang), name in todo.items()
+        _one(set_code, lang, rarity, name)
+        for (set_code, lang, rarity), name in todo.items()
     ])
 
     return summary

@@ -632,7 +632,7 @@ class CollectionPage:
         when the setting is off / not owned / not yet cached."""
         if (config_manager.get_match_owned_artwork() and item.is_owned
                 and item.set_code and item.set_code not in ('N/A', '')):
-            return image_manager.get_printing_image_url(item.set_code, item.language)
+            return image_manager.get_printing_image_url(item.set_code, item.language, item.rarity)
         return None
 
     def _collector_row_image_src(self, item: 'CollectorRow') -> Optional[str]:
@@ -644,7 +644,7 @@ class CollectionPage:
         """
         if (config_manager.get_match_owned_artwork() and item.is_owned
                 and item.set_code and item.set_code not in ('N/A', '')):
-            printing_url = image_manager.get_printing_image_url(item.set_code, item.language)
+            printing_url = image_manager.get_printing_image_url(item.set_code, item.language, item.rarity)
             if printing_url:
                 return printing_url
 
