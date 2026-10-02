@@ -2,6 +2,15 @@ from src.core.models import Collection, CollectionCard, CollectionVariant, Colle
 from src.core.utils import generate_variant_id
 from typing import Optional
 
+
+def _edition_from(first_edition: bool, edition: Optional[str]) -> str:
+    """Resolve the effective edition string from the (edition, first_edition)
+    inputs, defaulting sensibly for callers that only pass first_edition."""
+    if edition:
+        return edition
+    return "1st Edition" if first_edition else "Unlimited Edition"
+
+
 class CollectionEditor:
     @staticmethod
     def get_quantity(
@@ -14,11 +23,13 @@ class CollectionEditor:
         language: str = 'EN',
         condition: str = 'Near Mint',
         first_edition: bool = False,
-        storage_location: Optional[str] = None
+        storage_location: Optional[str] = None,
+        edition: Optional[str] = None,
     ) -> int:
         """
         Returns the quantity of a specific card entry (specific storage location).
         """
+        eff_edition = _edition_from(first_edition, edition)
         target_card = next((c for c in collection.cards if c.card_id == card_id), None)
         if not target_card:
             return 0
@@ -37,7 +48,7 @@ class CollectionEditor:
         target_entry = next((e for e in target_variant.entries
                              if e.language == language and
                                 e.condition == condition and
-                                e.first_edition == first_edition and
+                                e.edition == eff_edition and
                                 e.storage_location == storage_location), None)
 
         return target_entry.quantity if target_entry else 0
@@ -52,11 +63,13 @@ class CollectionEditor:
         image_id: Optional[int] = None,
         language: str = 'EN',
         condition: str = 'Near Mint',
-        first_edition: bool = False
+        first_edition: bool = False,
+        edition: Optional[str] = None,
     ) -> int:
         """
         Returns the total quantity of a card configuration across all storage locations.
         """
+        eff_edition = _edition_from(first_edition, edition)
         target_card = next((c for c in collection.cards if c.card_id == card_id), None)
         if not target_card:
             return 0
@@ -76,7 +89,7 @@ class CollectionEditor:
         for e in target_variant.entries:
             if (e.language == language and
                 e.condition == condition and
-                e.first_edition == first_edition):
+                e.edition == eff_edition):
                 total += e.quantity
         return total
 
@@ -93,12 +106,15 @@ class CollectionEditor:
         image_id: Optional[int] = None,
         variant_id: Optional[str] = None,
         mode: str = 'SET',
-        storage_location: Optional[str] = None
+        storage_location: Optional[str] = None,
+        edition: Optional[str] = None,
     ) -> bool:
         """
         Applies a change (add, set, remove) to a collection.
         Returns True if the collection was modified, False otherwise.
         """
+        eff_edition = _edition_from(first_edition, edition)
+        eff_first = (eff_edition == "1st Edition")
         modified = False
 
         # 1. Find or Create CollectionCard
@@ -154,7 +170,7 @@ class CollectionEditor:
             for e in target_variant.entries:
                 if (e.condition == condition and
                     e.language == language and
-                    e.first_edition == first_edition and
+                    e.edition == eff_edition and
                     e.storage_location == storage_location):
                     target_entry = e
                     break
@@ -178,7 +194,8 @@ class CollectionEditor:
                     target_variant.entries.append(CollectionEntry(
                         condition=condition,
                         language=language,
-                        first_edition=first_edition,
+                        edition=eff_edition,
+                        first_edition=eff_first,
                         quantity=final_quantity,
                         storage_location=storage_location
                     ))
@@ -214,7 +231,8 @@ class CollectionEditor:
         to_storage: Optional[str],
         quantity: int = 1,
         image_id: Optional[int] = None,
-        variant_id: Optional[str] = None
+        variant_id: Optional[str] = None,
+        edition: Optional[str] = None,
     ) -> bool:
         """
         Moves a specific quantity of a card from one storage location to another.
@@ -222,10 +240,12 @@ class CollectionEditor:
         if from_storage == to_storage:
             return False
 
+        eff_edition = _edition_from(first_edition, edition)
+
         # Verify availability
         available = CollectionEditor.get_quantity(
             collection, api_card.id, variant_id, set_code, rarity, image_id,
-            language, condition, first_edition, from_storage
+            language, condition, first_edition, from_storage, edition=eff_edition
         )
 
         if available < quantity:
@@ -235,14 +255,14 @@ class CollectionEditor:
         removed = CollectionEditor.apply_change(
             collection, api_card, set_code, rarity, language, -quantity,
             condition, first_edition, image_id, variant_id, mode='ADD',
-            storage_location=from_storage
+            storage_location=from_storage, edition=eff_edition
         )
 
         # Add to Target
         added = CollectionEditor.apply_change(
             collection, api_card, set_code, rarity, language, quantity,
             condition, first_edition, image_id, variant_id, mode='ADD',
-            storage_location=to_storage
+            storage_location=to_storage, edition=eff_edition
         )
 
         return removed or added

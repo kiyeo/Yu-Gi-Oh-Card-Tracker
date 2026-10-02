@@ -80,6 +80,19 @@ RARITY_ABBREVIATIONS = {
     "Short Print": "SP",
 }
 
+# Card Editions
+CARD_EDITIONS = [
+    "1st Edition",
+    "Unlimited Edition",
+    "Limited Edition",
+]
+
+EDITION_ABBREVIATIONS = {
+    "1st Edition": "1E",
+    "Unlimited Edition": "UE",
+    "Limited Edition": "LE",
+}
+
 # Card Conditions
 CARD_CONDITIONS = [
     "Mint",

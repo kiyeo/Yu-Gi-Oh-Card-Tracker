@@ -400,6 +400,74 @@ CODE-EN002; Test Set 2; Common, Rare
             s._rarity_code_from_filename("File:Other-ABC-EN-R.png", "CDIP", "EN")
         )
 
+    def test_edition_code_from_filename(self):
+        s = self.service
+        self.assertEqual(s._edition_code_from_filename("File:CyberEsper-CDIP-EN-UtR-1E.jpg"), "1E")
+        self.assertEqual(s._edition_code_from_filename("File:StardustDragon-CT05-EN-ScR-LE.png"), "LE")
+        self.assertEqual(s._edition_code_from_filename("File:Foo-ABC-EN-C-UE.jpg"), "UE")
+        self.assertIsNone(s._edition_code_from_filename("File:Foo-ABC-EN-C.jpg"))
+
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_resolves_limited_edition_only_printing(self, mock_get):
+        # Promo that only exists as Limited Edition must still resolve.
+        search_resp = MagicMock()
+        search_resp.status_code = 200
+        search_resp.json.return_value = {
+            "query": {"search": [
+                {"title": "File:StardustDragon-CT05-EN-ScR-LE.png"},
+            ]}
+        }
+        imageinfo_resp = MagicMock()
+        imageinfo_resp.status_code = 200
+        imageinfo_resp.json.return_value = {
+            "query": {"pages": {"1": {"imageinfo": [
+                {"url": "https://ms.yugipedia.com//StardustDragon-CT05-EN-ScR-LE.png"}
+            ]}}}
+        }
+        mock_get.side_effect = [search_resp, imageinfo_resp]
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(
+            self.service.get_set_printing_image_url(
+                "Stardust Dragon", "CT05-EN002", "EN", rarity="Secret Rare"
+            )
+        )
+        loop.close()
+        self.assertEqual(url, "https://ms.yugipedia.com//StardustDragon-CT05-EN-ScR-LE.png")
+
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_prefers_requested_edition(self, mock_get):
+        # Both 1E and LE exist; requesting Limited Edition must pick LE.
+        search_resp = MagicMock()
+        search_resp.status_code = 200
+        search_resp.json.return_value = {
+            "query": {"search": [
+                {"title": "File:Foo-ABCD-EN-UR-1E.png"},
+                {"title": "File:Foo-ABCD-EN-UR-LE.png"},
+            ]}
+        }
+        imageinfo_resp = MagicMock()
+        imageinfo_resp.status_code = 200
+        imageinfo_resp.json.return_value = {
+            "query": {"pages": {"1": {"imageinfo": [
+                {"url": "https://ms.yugipedia.com//Foo-ABCD-EN-UR-LE.png"}
+            ]}}}
+        }
+        mock_get.side_effect = [search_resp, imageinfo_resp]
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(
+            self.service.get_set_printing_image_url(
+                "Foo", "ABCD-EN001", "EN", rarity="Ultra Rare", edition="Limited Edition"
+            )
+        )
+        loop.close()
+        self.assertEqual(url, "https://ms.yugipedia.com//Foo-ABCD-EN-UR-LE.png")
+        second_params = mock_get.call_args_list[1].kwargs["params"]
+        self.assertEqual(second_params["titles"], "File:Foo-ABCD-EN-UR-LE.png")
+
     def test_map_rarity_corrected_and_complete(self):
         s = self.service
         # Previously-incorrect mappings now fixed.

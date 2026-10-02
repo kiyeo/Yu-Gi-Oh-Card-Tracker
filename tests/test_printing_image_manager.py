@@ -28,20 +28,27 @@ class TestPrintingImageHelpers(unittest.TestCase):
         k_c = ImageManager.printing_key("CDIP-EN045", "EN", "Common")
         self.assertNotEqual(k_ur, k_c)
 
+    def test_edition_distinguishes_keys(self):
+        k_1e = ImageManager.printing_key("CDIP-EN045", "EN", "Ultimate Rare", "1st Edition")
+        k_le = ImageManager.printing_key("CDIP-EN045", "EN", "Ultimate Rare", "Limited Edition")
+        k_none = ImageManager.printing_key("CDIP-EN045", "EN", "Ultimate Rare", "")
+        self.assertNotEqual(k_1e, k_le)
+        self.assertNotEqual(k_1e, k_none)
+
     def test_exists_and_url_reflect_cache(self):
-        set_code, lang, rarity = "LOB-EN001", "EN", "Ultra Rare"
-        self.assertFalse(self.mgr.printing_image_exists(set_code, lang, rarity))
-        self.assertIsNone(self.mgr.get_printing_image_url(set_code, lang, rarity))
+        set_code, lang, rarity, edition = "LOB-EN001", "EN", "Ultra Rare", "1st Edition"
+        self.assertFalse(self.mgr.printing_image_exists(set_code, lang, rarity, edition))
+        self.assertIsNone(self.mgr.get_printing_image_url(set_code, lang, rarity, edition))
 
         # Simulate a cached file.
-        path = self.mgr.get_printing_image_path(set_code, lang, rarity)
+        path = self.mgr.get_printing_image_path(set_code, lang, rarity, edition)
         with open(path, 'wb') as f:
             f.write(b"jpegdata")
 
-        self.assertTrue(self.mgr.printing_image_exists(set_code, lang, rarity))
+        self.assertTrue(self.mgr.printing_image_exists(set_code, lang, rarity, edition))
         self.assertEqual(
-            self.mgr.get_printing_image_url(set_code, lang, rarity),
-            f"/printings/{ImageManager.printing_key(set_code, lang, rarity)}.jpg",
+            self.mgr.get_printing_image_url(set_code, lang, rarity, edition),
+            f"/printings/{ImageManager.printing_key(set_code, lang, rarity, edition)}.jpg",
         )
 
 

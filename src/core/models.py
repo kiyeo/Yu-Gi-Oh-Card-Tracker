@@ -1,5 +1,5 @@
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 import uuid
 
 # --- Collection Models ---
@@ -7,12 +7,47 @@ import uuid
 class CollectionEntry(BaseModel):
     condition: Literal["Mint", "Near Mint", "Excellent", "Good", "Light Played", "Played", "Poor", "Damaged"] = "Near Mint"
     language: str = "EN"
+    # Explicit print edition. Source of truth going forward. `first_edition`
+    # is kept as a derived/compatibility mirror (edition == "1st Edition").
+    edition: Literal["1st Edition", "Unlimited Edition", "Limited Edition"] = "Unlimited Edition"
     first_edition: bool = False
     quantity: int = 1
     storage_location: Optional[str] = Field(None, description="e.g., Box A, Row 2")
     purchase_price: Optional[float] = 0.0
     market_value: Optional[float] = 0.0
     purchase_date: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reconcile_edition(cls, data):
+        """Keep `edition` and `first_edition` consistent, migrating old data.
+
+        - Old files have only `first_edition`: derive edition from it
+          (True -> "1st Edition", False -> "Unlimited Edition").
+        - New callers may set `edition`: derive first_edition from it.
+        - If both are present and disagree, `edition` wins when it is explicitly
+          a non-default value; otherwise `first_edition` is honored.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        edition = data.get("edition")
+        first = data.get("first_edition")
+
+        if edition is None and first is not None:
+            data["edition"] = "1st Edition" if first else "Unlimited Edition"
+        elif edition is not None and first is None:
+            data["first_edition"] = (edition == "1st Edition")
+        elif edition is not None and first is not None:
+            # Both provided. Trust `edition` as the richer field, but if edition
+            # is the default while first_edition says 1st, honor first_edition.
+            if edition == "Unlimited Edition" and first:
+                data["edition"] = "1st Edition"
+            else:
+                data["first_edition"] = (edition == "1st Edition")
+        # If neither provided, defaults apply (Unlimited / False), already
+        # consistent.
+        return data
 
 class StorageDefinition(BaseModel):
     name: str

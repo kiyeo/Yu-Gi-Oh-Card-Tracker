@@ -274,6 +274,26 @@ class YugipediaService:
         name (keeping letters/digits). Mirror that so our search matches."""
         return re.sub(r"[^A-Za-z0-9]", "", card_name or "")
 
+    # Edition codes used in Yugipedia card image file names.
+    EDITION_CODES = {
+        "1st Edition": "1E",
+        "Unlimited Edition": "UE",
+        "Unlimited": "UE",
+        "Limited Edition": "LE",
+        "Limited": "LE",
+    }
+    _KNOWN_EDITION_CODES = {"1E", "UE", "LE"}
+
+    @staticmethod
+    def _edition_code_from_filename(title: str) -> Optional[str]:
+        """Return the edition code (1E/UE/LE) found in a file name, if any."""
+        base = title[len("File:"):] if title.startswith("File:") else title
+        base = re.sub(r"\.[A-Za-z0-9]+$", "", base)
+        for token in base.split("-"):
+            if token in YugipediaService._KNOWN_EDITION_CODES:
+                return token
+        return None
+
     @staticmethod
     def _rarity_code_from_filename(title: str, prefix: str, region: str) -> Optional[str]:
         """Extract the rarity code segment from a Yugipedia card image file name.
@@ -299,6 +319,7 @@ class YugipediaService:
         set_code: str,
         language: str = "EN",
         rarity: Optional[str] = None,
+        edition: Optional[str] = None,
     ) -> Optional[str]:
         """Resolve the direct image URL of a card's printing in a given set.
 
@@ -308,11 +329,12 @@ class YugipediaService:
         therefore the era-appropriate card layout/frame.
 
         Rarity: when provided (full name, e.g. "Ultimate Rare"), the file whose
-        encoded rarity code matches (e.g. ``-UtR-``) is preferred, since a card
-        can have multiple rarities in the same set with different images.
+        encoded rarity code matches (e.g. ``-UtR-``) is preferred.
 
-        Edition preference: 1st Edition (``-1E``) is preferred over Unlimited
-        (``-UE``) or no-edition files.
+        Edition: when provided ("1st Edition" / "Unlimited Edition" /
+        "Limited Edition"), the file whose edition code matches (``1E``/``UE``/
+        ``LE``) is preferred. When not provided, 1st Edition is used as a mild
+        default but Limited/Unlimited-only printings still resolve.
 
         Returns None if no matching file can be found.
         """
@@ -327,6 +349,7 @@ class YugipediaService:
         lang = (language or "EN").strip().upper()
         regions = self._REGION_FALLBACKS.get(lang, [lang])
         target_rarity_code = RARITY_ABBREVIATIONS.get(rarity) if rarity else None
+        target_edition_code = self.EDITION_CODES.get(edition) if edition else None
 
         params = {
             "action": "query",
@@ -359,6 +382,20 @@ class YugipediaService:
             if not candidates:
                 return None
 
+            def _choose_edition(pool: list) -> str:
+                """Pick a file from a pool honoring edition preference.
+
+                1. If a specific edition was requested, prefer that edition.
+                2. Otherwise prefer 1st Edition as a mild default.
+                3. If neither applies, return the first available (so Limited /
+                   Unlimited-only printings still resolve)."""
+                if target_edition_code:
+                    matches = [t for t in pool if self._edition_code_from_filename(t) == target_edition_code]
+                    if matches:
+                        return matches[0]
+                first_ed = [t for t in pool if self._edition_code_from_filename(t) == "1E"]
+                return (first_ed or pool)[0]
+
             def pick_for_region(region: str) -> Optional[str]:
                 region_files = [t for t in candidates if f"-{prefix}-{region}-" in t]
                 if not region_files:
@@ -374,27 +411,21 @@ class YugipediaService:
                     if rarity_matches:
                         pool = rarity_matches
 
-                # Within the chosen pool, prefer 1st Edition.
-                first_ed = [t for t in pool if "-1E" in t]
-                return (first_ed or pool)[0]
+                return _choose_edition(pool)
 
             chosen = None
             for region in regions:
                 chosen = pick_for_region(region)
                 if chosen:
                     break
-            # Last resort: any candidate (prefer rarity match, then 1st edition).
+            # Last resort: any candidate (prefer rarity match, then edition).
             if not chosen:
                 pool = candidates
                 if target_rarity_code:
-                    rarity_matches = [
-                        t for t in candidates
-                        if f"-{target_rarity_code}-" in t
-                    ]
+                    rarity_matches = [t for t in candidates if f"-{target_rarity_code}-" in t]
                     if rarity_matches:
                         pool = rarity_matches
-                first_ed = [t for t in pool if "-1E" in t]
-                chosen = (first_ed or pool)[0]
+                chosen = _choose_edition(pool)
 
             # chosen is a "File:..." title; resolve to a direct URL.
             return await self.get_file_image_url(chosen)

@@ -28,31 +28,39 @@ def _collection():
 
 
 class TestCollectOwnedPrintings(unittest.TestCase):
-    def test_collects_distinct_set_code_language_rarity_tuples(self):
+    def test_collects_distinct_set_code_language_rarity_edition_tuples(self):
+        col = Collection(name="c", cards=[
+            CollectionCard(card_id=1, name="Stardust Dragon", variants=[
+                CollectionVariant(variant_id="v1", set_code="TDGS-EN040", rarity="Ultra Rare",
+                                  entries=[
+                                      CollectionEntry(quantity=1, language="EN", first_edition=True),
+                                      CollectionEntry(quantity=1, language="EN", first_edition=False),
+                                  ]),
+            ]),
+        ])
         with patch.object(svc.persistence, 'list_collections', return_value=['c.json']), \
-             patch.object(svc.persistence, 'load_collection', return_value=_collection()):
+             patch.object(svc.persistence, 'load_collection', return_value=col):
             pending = svc._collect_owned_printings()
 
         self.assertEqual(set(pending.keys()), {
-            ("TDGS-EN040", "EN", "Ultra Rare"),
-            ("TDGS-EN040", "DE", "Ultra Rare"),
+            ("TDGS-EN040", "EN", "Ultra Rare", "1st Edition"),
+            ("TDGS-EN040", "EN", "Ultra Rare", "Unlimited Edition"),
         })
-        self.assertEqual(pending[("TDGS-EN040", "EN", "Ultra Rare")], "Stardust Dragon")
 
 
 class TestDownloadOwnedPrintingImages(unittest.TestCase):
     def test_summary_counts_downloaded_and_skipped(self):
-        pending = {("TDGS-EN040", "EN", "Ultra Rare"): "Stardust Dragon",
-                   ("LOB-EN005", "EN", "Ultra Rare"): "Dark Magician"}
+        pending = {("TDGS-EN040", "EN", "Ultra Rare", "1st Edition"): "Stardust Dragon",
+                   ("LOB-EN005", "EN", "Ultra Rare", ""): "Dark Magician"}
 
-        async def fake_resolve(name, set_code, lang, rarity=None):
-            return f"https://img/{set_code}-{lang}-{rarity}.png"
+        async def fake_resolve(name, set_code, lang, rarity=None, edition=None):
+            return f"https://img/{set_code}-{lang}-{rarity}-{edition}.png"
 
-        async def fake_ensure(set_code, lang, url, rarity=""):
+        async def fake_ensure(set_code, lang, url, rarity="", edition=""):
             return f"/local/{set_code}"
 
         # One already cached (LOB), one needs download (TDGS).
-        def exists(set_code, lang, rarity=""):
+        def exists(set_code, lang, rarity="", edition=""):
             return set_code == "LOB-EN005"
 
         with patch.object(svc, '_collect_owned_printings', return_value=pending), \

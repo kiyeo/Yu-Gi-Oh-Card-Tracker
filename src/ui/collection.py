@@ -57,6 +57,7 @@ class CollectorRow:
     language: str
     condition: str
     first_edition: bool
+    edition: str = "Unlimited Edition"
     image_id: Optional[int] = None
     variant_id: Optional[str] = None
     entries: List[CollectionEntry] = field(default_factory=list)
@@ -247,7 +248,7 @@ def build_collector_rows(api_cards: List[ApiCard], owned_details: Dict[int, Coll
                 for cv in matched_owned:
                     groups = {}
                     for entry in cv.entries:
-                        k = (entry.language, entry.condition, entry.first_edition)
+                        k = (entry.language, entry.condition, entry.edition)
                         groups[k] = groups.get(k, 0) + entry.quantity
 
                     # Resolve image. When "match owned artwork" is enabled, prefer
@@ -275,8 +276,8 @@ def build_collector_rows(api_cards: List[ApiCard], owned_details: Dict[int, Coll
                     set_name = best_api_set.set_name
                     price = get_display_price_for_variant(card, cv.variant_id, cv.set_code, rarity, cv.image_id)
 
-                    for (lang, cond, first), qty in groups.items():
-                        group_entries = [e for e in cv.entries if e.language == lang and e.condition == cond and e.first_edition == first]
+                    for (lang, cond, ed), qty in groups.items():
+                        group_entries = [e for e in cv.entries if e.language == lang and e.condition == cond and e.edition == ed]
                         rows.append(CollectorRow(
                             api_card=card,
                             set_code=cv.set_code,
@@ -288,7 +289,8 @@ def build_collector_rows(api_cards: List[ApiCard], owned_details: Dict[int, Coll
                             is_owned=True,
                             language=lang,
                             condition=cond,
-                            first_edition=first,
+                            first_edition=(ed == "1st Edition"),
+                            edition=ed,
                             image_id=row_image_id,
                             variant_id=cv.variant_id,
                             entries=group_entries
@@ -367,7 +369,7 @@ def build_collector_rows(api_cards: List[ApiCard], owned_details: Dict[int, Coll
             if var_id not in processed_variant_ids:
                 groups = {}
                 for entry in cv.entries:
-                    k = (entry.language, entry.condition, entry.first_edition)
+                    k = (entry.language, entry.condition, entry.edition)
                     groups[k] = groups.get(k, 0) + entry.quantity
 
                 row_img_url = img_url
@@ -377,8 +379,8 @@ def build_collector_rows(api_cards: List[ApiCard], owned_details: Dict[int, Coll
                              row_img_url = img.image_url_small
                              break
 
-                for (lang, cond, first), qty in groups.items():
-                     group_entries = [e for e in cv.entries if e.language == lang and e.condition == cond and e.first_edition == first]
+                for (lang, cond, ed), qty in groups.items():
+                     group_entries = [e for e in cv.entries if e.language == lang and e.condition == cond and e.edition == ed]
                      rows.append(CollectorRow(
                         api_card=card,
                         set_code=cv.set_code,
@@ -390,7 +392,8 @@ def build_collector_rows(api_cards: List[ApiCard], owned_details: Dict[int, Coll
                         is_owned=True,
                         language=lang,
                         condition=cond,
-                        first_edition=first,
+                        first_edition=(ed == "1st Edition"),
+                        edition=ed,
                         image_id=cv.image_id,
                         variant_id=cv.variant_id,
                         entries=group_entries
@@ -632,7 +635,7 @@ class CollectionPage:
         when the setting is off / not owned / not yet cached."""
         if (config_manager.get_match_owned_artwork() and item.is_owned
                 and item.set_code and item.set_code not in ('N/A', '')):
-            return image_manager.get_printing_image_url(item.set_code, item.language, item.rarity)
+            return image_manager.get_printing_image_url(item.set_code, item.language, item.rarity, item.edition)
         return None
 
     def _collector_row_image_src(self, item: 'CollectorRow') -> Optional[str]:
@@ -644,7 +647,7 @@ class CollectionPage:
         """
         if (config_manager.get_match_owned_artwork() and item.is_owned
                 and item.set_code and item.set_code not in ('N/A', '')):
-            printing_url = image_manager.get_printing_image_url(item.set_code, item.language, item.rarity)
+            printing_url = image_manager.get_printing_image_url(item.set_code, item.language, item.rarity, item.edition)
             if printing_url:
                 return printing_url
 
@@ -1315,6 +1318,7 @@ class CollectionPage:
             return
 
         col = self.state['current_collection']
+        edition = kwargs.get('edition')
 
         try:
             modified = False
@@ -1392,7 +1396,8 @@ class CollectionPage:
                     image_id=image_id,
                     variant_id=variant_id,
                     mode=mode,
-                    storage_location=storage_location
+                    storage_location=storage_location,
+                    edition=edition
                 )
 
                 if modified:
@@ -1426,8 +1431,16 @@ class CollectionPage:
             logger.error(f"Error saving collection: {e}", exc_info=True)
             ui.notify(f"Error saving: {e}", type='negative')
 
-    async def open_single_view(self, card: ApiCard, is_owned: bool = False, quantity: int = 0, initial_set: str = None, owned_languages: Set[str] = None, rarity: str = None, set_name: str = None, language: str = None, condition: str = "Near Mint", first_edition: bool = False, image_url: str = None, image_id: int = None, set_price: float = 0.0, variant_id: str = None, printing_src: str = None):
+    async def open_single_view(self, card: ApiCard, is_owned: bool = False, quantity: int = 0, initial_set: str = None, owned_languages: Set[str] = None, rarity: str = None, set_name: str = None, language: str = None, condition: str = "Near Mint", first_edition: bool = False, image_url: str = None, image_id: int = None, set_price: float = 0.0, variant_id: str = None, printing_src: str = None, edition: str = None):
         async def on_save(c, set_code, rarity, language, quantity, condition, first_edition, image_id, variant_id, mode, **kwargs):
+            # Ensure an explicit edition reaches the editor. Prefer an edition
+            # the single-card view supplied; otherwise derive it from the
+            # first_edition flag (keeps Unlimited vs Limited sensible).
+            if 'edition' not in kwargs or not kwargs.get('edition'):
+                kwargs['edition'] = (
+                    "1st Edition" if first_edition
+                    else (edition if edition and edition != "1st Edition" else "Unlimited Edition")
+                )
             await self.save_card_change(c, set_code, rarity, language, quantity, condition, first_edition, image_id, variant_id, mode, **kwargs)
 
         # Prefer the era-accurate printing image when available.
@@ -1464,7 +1477,7 @@ class CollectionPage:
             return
 
         if self.state['view_scope'] == 'collectors':
-             await self.single_card_view.open_collectors(card, quantity, initial_set or "N/A", rarity, set_name, language, condition, first_edition, image_url, image_id, set_price, self.state['current_collection'], on_save, variant_id=variant_id, printing_src=printing_src)
+             await self.single_card_view.open_collectors(card, quantity, initial_set or "N/A", rarity, set_name, language, condition, first_edition, image_url, image_id, set_price, self.state['current_collection'], on_save, variant_id=variant_id, printing_src=printing_src, edition=edition)
              return
 
         # Fallback removed
@@ -1625,7 +1638,7 @@ class CollectionPage:
                 printing_src = self._collector_printing_src(item)
 
                 with ui.grid(columns=cols).classes(f'w-full {bg} p-1 items-center rounded hover:bg-gray-700 transition cursor-pointer') \
-                        .on('click', lambda c=item, ps=printing_src: self.open_single_view(c.api_card, c.is_owned, c.owned_count, initial_set=c.set_code, rarity=c.rarity, set_name=c.set_name, language=c.language, condition=c.condition, first_edition=c.first_edition, image_url=ps or c.image_url, image_id=c.image_id, set_price=c.price, variant_id=c.variant_id, printing_src=ps)):
+                        .on('click', lambda c=item, ps=printing_src: self.open_single_view(c.api_card, c.is_owned, c.owned_count, initial_set=c.set_code, rarity=c.rarity, set_name=c.set_name, language=c.language, condition=c.condition, first_edition=c.first_edition, image_url=ps or c.image_url, image_id=c.image_id, set_price=c.price, variant_id=c.variant_id, printing_src=ps, edition=c.edition)):
                     with ui.image(img_src).classes('h-10 w-8 object-cover'):
                          self._setup_card_tooltip(item.api_card, specific_image_id=item.image_id, printing_src=printing_src)
                     ui.label(item.api_card.name).classes('truncate text-sm font-bold')
@@ -1669,7 +1682,7 @@ class CollectionPage:
                 printing_src = self._collector_printing_src(item)
 
                 with ui.card().classes(f'collection-card w-full p-0 cursor-pointer {opacity} border {border} hover:scale-105 transition-transform') \
-                        .on('click', lambda c=item, ps=printing_src: self.open_single_view(c.api_card, c.is_owned, c.owned_count, initial_set=c.set_code, rarity=c.rarity, set_name=c.set_name, language=c.language, condition=c.condition, first_edition=c.first_edition, image_url=ps or c.image_url, image_id=c.image_id, set_price=c.price, variant_id=c.variant_id, printing_src=ps)):
+                        .on('click', lambda c=item, ps=printing_src: self.open_single_view(c.api_card, c.is_owned, c.owned_count, initial_set=c.set_code, rarity=c.rarity, set_name=c.set_name, language=c.language, condition=c.condition, first_edition=c.first_edition, image_url=ps or c.image_url, image_id=c.image_id, set_price=c.price, variant_id=c.variant_id, printing_src=ps, edition=c.edition)):
 
                     with ui.element('div').classes('relative w-full aspect-[2/3] bg-black'):
                         if img_src: ui.image(img_src).classes('w-full h-full object-cover')

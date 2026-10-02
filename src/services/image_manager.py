@@ -27,34 +27,36 @@ class ImageManager:
     # --- Per-printing images (era-accurate card layout from Yugipedia) ---
 
     @staticmethod
-    def printing_key(set_code: str, language: str, rarity: str = "") -> str:
+    def printing_key(set_code: str, language: str, rarity: str = "", edition: str = "") -> str:
         """Stable filesystem key for a specific printing's image.
 
-        Includes rarity because a card can appear in the same set at multiple
-        rarities, each with a different image/layout.
+        Includes rarity and edition because a card can appear in the same set at
+        multiple rarities/editions, each with a different image/layout.
         """
         raw = f"{(set_code or '').strip()}_{(language or '').strip().upper()}"
         if rarity:
             raw += f"_{str(rarity).strip()}"
+        if edition:
+            raw += f"_{str(edition).strip()}"
         return "".join(c for c in raw if c.isalnum() or c in ('-', '_')).strip() or "unknown"
 
-    def get_printing_image_path(self, set_code: str, language: str, rarity: str = "") -> str:
-        return os.path.join(self.printings_dir, f"{self.printing_key(set_code, language, rarity)}.jpg")
+    def get_printing_image_path(self, set_code: str, language: str, rarity: str = "", edition: str = "") -> str:
+        return os.path.join(self.printings_dir, f"{self.printing_key(set_code, language, rarity, edition)}.jpg")
 
-    def printing_image_exists(self, set_code: str, language: str, rarity: str = "") -> bool:
-        return os.path.exists(self.get_printing_image_path(set_code, language, rarity))
+    def printing_image_exists(self, set_code: str, language: str, rarity: str = "", edition: str = "") -> bool:
+        return os.path.exists(self.get_printing_image_path(set_code, language, rarity, edition))
 
-    def get_printing_image_url(self, set_code: str, language: str, rarity: str = "") -> Optional[str]:
+    def get_printing_image_url(self, set_code: str, language: str, rarity: str = "", edition: str = "") -> Optional[str]:
         """Local static URL for a cached printing image, or None if not cached."""
-        if self.printing_image_exists(set_code, language, rarity):
-            return f"/printings/{self.printing_key(set_code, language, rarity)}.jpg"
+        if self.printing_image_exists(set_code, language, rarity, edition):
+            return f"/printings/{self.printing_key(set_code, language, rarity, edition)}.jpg"
         return None
 
-    async def ensure_printing_image(self, set_code: str, language: str, url: str, rarity: str = "") -> Optional[str]:
+    async def ensure_printing_image(self, set_code: str, language: str, url: str, rarity: str = "", edition: str = "") -> Optional[str]:
         """Download and cache a printing image (from a resolved Yugipedia URL)."""
         if not url:
             return None
-        local_path = self.get_printing_image_path(set_code, language, rarity)
+        local_path = self.get_printing_image_path(set_code, language, rarity, edition)
         if os.path.exists(local_path):
             return local_path
         try:
@@ -65,11 +67,11 @@ class ImageManager:
                         await run.io_bound(self._write_file, local_path, data)
                         return local_path
                     self.logger.warning(
-                        f"Failed to download printing image {set_code}/{language}/{rarity}: {response.status}"
+                        f"Failed to download printing image {set_code}/{language}/{rarity}/{edition}: {response.status}"
                     )
                     return None
         except Exception as e:
-            self.logger.error(f"Error downloading printing image {set_code}/{language}/{rarity}: {e}")
+            self.logger.error(f"Error downloading printing image {set_code}/{language}/{rarity}/{edition}: {e}")
             return None
 
     def get_set_image_path(self, set_code: str) -> str:

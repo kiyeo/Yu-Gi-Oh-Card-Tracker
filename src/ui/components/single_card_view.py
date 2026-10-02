@@ -4,7 +4,7 @@ from src.services.ygo_api import ApiCard, ygo_service
 from src.services.image_manager import image_manager
 from src.services.pricing_service import pricing_service
 from src.core.utils import transform_set_code, generate_variant_id, normalize_set_code, extract_language_code, LANGUAGE_COUNTRY_MAP
-from src.core.constants import CARD_CONDITIONS, RARITY_RANKING
+from src.core.constants import CARD_CONDITIONS, RARITY_RANKING, CARD_EDITIONS
 from typing import List, Optional, Dict, Set, Callable, Any
 import logging
 import asyncio
@@ -208,8 +208,15 @@ class SingleCardView:
                 ui.select(storage_opts, label='Storage', value=input_state.get('storage_location'),
                           on_change=lambda e: input_state.update({'storage_location': e.value})).classes('col-span-6 sm:col-span-5').props('dense options-dense dark')
 
-                ui.checkbox('1st Edition', value=input_state['first_edition'],
-                            on_change=lambda e: [input_state.update({'first_edition': e.value}), on_change_callback()]).classes('col-span-6 sm:col-span-2 my-auto').props('dense dark')
+                def _on_edition_change(e):
+                    input_state.update({
+                        'edition': e.value,
+                        'first_edition': (e.value == '1st Edition'),
+                    })
+                    on_change_callback()
+
+                ui.select(CARD_EDITIONS, label='Edition', value=input_state.get('edition', 'Unlimited Edition'),
+                          on_change=_on_edition_change).classes('col-span-6 sm:col-span-2 my-auto').props('dense options-dense dark')
 
                 ui.number('Quantity', min=0, value=input_state['quantity'],
                             on_change=lambda e: input_state.update({'quantity': int(e.value or 0)})).classes('col-span-6 sm:col-span-2').props('dense dark')
@@ -546,6 +553,7 @@ class SingleCardView:
         hide_header_stats: bool = False,
         storage_options: Dict[str, str] = None,
         printing_src: str = None,
+        edition: str = None,
     ):
         try:
             active_timers = []
@@ -616,6 +624,7 @@ class SingleCardView:
                 'rarity': rarity,
                 'condition': condition,
                 'first_edition': first_edition,
+                'edition': edition or ("1st Edition" if first_edition else "Unlimited Edition"),
                 'set_base_code': initial_base_code,
                 'image_id': image_id
             }
@@ -738,7 +747,7 @@ class SingleCardView:
                                 if not hide_header_stats:
                                     lbl_lang = info_label('Language', language)
                                     lbl_cond = info_label('Condition', condition)
-                                    lbl_edition = info_label('Edition', "1st Edition" if first_edition else "Unlimited")
+                                    lbl_edition = info_label('Edition', input_state.get('edition', '1st Edition' if first_edition else 'Unlimited Edition'))
                                 else:
                                     # Create placeholders or just skip?
                                     # Since we use variables later in update_display_stats, we must define them.
@@ -748,7 +757,7 @@ class SingleCardView:
                                     lbl_lang.parent_slot.parent.set_visibility(False)
                                     lbl_cond = info_label('Condition', condition)
                                     lbl_cond.parent_slot.parent.set_visibility(False)
-                                    lbl_edition = info_label('Edition', "1st Edition" if first_edition else "Unlimited")
+                                    lbl_edition = info_label('Edition', input_state.get('edition', '1st Edition' if first_edition else 'Unlimited Edition'))
                                     lbl_edition.parent_slot.parent.set_visibility(False)
 
                         # Market Prices
@@ -798,7 +807,7 @@ class SingleCardView:
                             lbl_rarity.text = input_state['rarity']
                             lbl_lang.text = input_state['language']
                             lbl_cond.text = input_state['condition']
-                            lbl_edition.text = "1st Edition" if input_state['first_edition'] else "Unlimited"
+                            lbl_edition.text = input_state.get('edition', '1st Edition' if input_state['first_edition'] else 'Unlimited Edition')
 
                             lbl_set_price.text = f"${s_price:.2f}" if s_price is not None else "-"
 

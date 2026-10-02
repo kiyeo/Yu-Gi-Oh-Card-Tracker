@@ -20,12 +20,15 @@ logger = logging.getLogger(__name__)
 _DEFAULT_LANGUAGE = "EN"
 
 
-def _collect_owned_printings() -> Dict[Tuple[str, str, str], str]:
-    """Return {(set_code, language_upper, rarity): card_name} for all owned
-    printings, deduplicated across every collection file. Only printings with a
-    real set code are included (custom/unknown entries are skipped).
+def _collect_owned_printings() -> Dict[Tuple[str, str, str, str], str]:
+    """Return {(set_code, language_upper, rarity, edition): card_name} for all
+    owned printings, deduplicated across every collection file. Only printings
+    with a real set code are included (custom/unknown entries are skipped).
+
+    ``edition`` is "1st Edition" when the owned entry is first edition, else ""
+    (unspecified — the resolver will match Unlimited/Limited as available).
     """
-    pending: Dict[Tuple[str, str, str], str] = {}
+    pending: Dict[Tuple[str, str, str, str], str] = {}
 
     for filename in persistence.list_collections():
         try:
@@ -44,16 +47,17 @@ def _collect_owned_printings() -> Dict[Tuple[str, str, str], str]:
                 if not set_code or set_code in ("N/A",):
                     continue
                 rarity = (variant.rarity or "").strip()
-                # Languages actually owned for this printing.
-                languages = {
-                    (e.language or _DEFAULT_LANGUAGE).strip().upper()
+                # Distinct (language, edition) actually owned for this printing.
+                combos = {
+                    (
+                        (e.language or _DEFAULT_LANGUAGE).strip().upper(),
+                        (e.edition or "Unlimited Edition"),
+                    )
                     for e in variant.entries
                     if e.quantity > 0
                 }
-                if not languages:
-                    continue
-                for lang in languages:
-                    key = (set_code, lang, rarity)
+                for lang, edition in combos:
+                    key = (set_code, lang, rarity, edition)
                     pending.setdefault(key, card_name)
 
     return pending
@@ -73,9 +77,9 @@ async def download_owned_printing_images(
 
     # Skip ones already cached.
     todo = {
-        (set_code, lang, rarity): name
-        for (set_code, lang, rarity), name in pending.items()
-        if not image_manager.printing_image_exists(set_code, lang, rarity)
+        key: name
+        for key, name in pending.items()
+        if not image_manager.printing_image_exists(key[0], key[1], key[2], key[3])
     }
 
     total = len(todo)
@@ -92,19 +96,21 @@ async def download_owned_printing_images(
     completed = 0
     lock = asyncio.Lock()
 
-    async def _one(set_code: str, lang: str, rarity: str, card_name: str):
+    async def _one(set_code: str, lang: str, rarity: str, edition: str, card_name: str):
         nonlocal completed
         async with semaphore:
             try:
-                url = await service.get_set_printing_image_url(card_name, set_code, lang, rarity)
-                if url and await image_manager.ensure_printing_image(set_code, lang, url, rarity):
+                url = await service.get_set_printing_image_url(
+                    card_name, set_code, lang, rarity, edition or None
+                )
+                if url and await image_manager.ensure_printing_image(set_code, lang, url, rarity, edition):
                     async with lock:
                         summary["downloaded"] += 1
                 else:
                     async with lock:
                         summary["failed"] += 1
             except Exception as e:
-                logger.debug(f"Printing fetch failed {card_name}/{set_code}/{lang}/{rarity}: {e}")
+                logger.debug(f"Printing fetch failed {card_name}/{set_code}/{lang}/{rarity}/{edition}: {e}")
                 async with lock:
                     summary["failed"] += 1
             finally:
@@ -114,8 +120,8 @@ async def download_owned_printing_images(
                         progress_callback(completed / total)
 
     await asyncio.gather(*[
-        _one(set_code, lang, rarity, name)
-        for (set_code, lang, rarity), name in todo.items()
+        _one(set_code, lang, rarity, edition, name)
+        for (set_code, lang, rarity, edition), name in todo.items()
     ])
 
     return summary
