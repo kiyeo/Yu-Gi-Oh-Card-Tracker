@@ -103,6 +103,8 @@ async def download_owned_printing_images(
                 url = await service.get_set_printing_image_url(
                     card_name, set_code, lang, rarity, edition or None
                 )
+                # Cache under the requested edition so the collection view (which
+                # looks up by the owned entry's edition) finds it deterministically.
                 if url and await image_manager.ensure_printing_image(set_code, lang, url, rarity, edition):
                     async with lock:
                         summary["downloaded"] += 1

@@ -6,7 +6,7 @@ from src.services.ygo_api import ygo_service, ApiCard
 from src.services.image_manager import image_manager
 from src.services.collection_editor import CollectionEditor
 from src.core.utils import generate_variant_id, normalize_set_code, extract_language_code, transform_set_code, LANGUAGE_COUNTRY_MAP
-from src.core.constants import CARD_CONDITIONS, CONDITION_ABBREVIATIONS
+from src.core.constants import CARD_CONDITIONS, CONDITION_ABBREVIATIONS, CARD_EDITIONS
 from src.ui.components.filter_pane import FilterPane
 from src.ui.components.single_card_view import SingleCardView
 from src.ui.components.structure_deck_dialog import StructureDeckDialog
@@ -78,6 +78,7 @@ class BulkCollectionEntry:
     variant_id: str
     storage_location: Optional[str] = None
     price: float = 0.0
+    edition: str = "Unlimited Edition"
 
 def _resolve_set_name(api_card: ApiCard, target_set_code: str) -> str:
     if not api_card or not api_card.card_sets:
@@ -116,7 +117,7 @@ def _build_collection_entries(col: Collection, api_card_map: Dict[int, ApiCard])
             for entry in variant.entries:
                 # Include storage_location in ID to distinguish stacks
                 loc_str = str(entry.storage_location) if entry.storage_location else "None"
-                unique_id = f"{variant.variant_id}_{entry.language}_{entry.condition}_{entry.first_edition}_{loc_str}"
+                unique_id = f"{variant.variant_id}_{entry.language}_{entry.condition}_{entry.edition}_{loc_str}"
                 entries.append(BulkCollectionEntry(
                     id=unique_id,
                     api_card=api_card,
@@ -127,6 +128,7 @@ def _build_collection_entries(col: Collection, api_card_map: Dict[int, ApiCard])
                     language=entry.language,
                     condition=entry.condition,
                     first_edition=entry.first_edition,
+                    edition=entry.edition,
                     image_url=img_url,
                     image_id=img_id,
                     variant_id=variant.variant_id,
@@ -157,6 +159,7 @@ class BulkAddPage:
             'default_language': default_lang,
             'default_condition': 'Near Mint',
             'default_first_ed': False,
+            'default_edition': 'Unlimited Edition',
             'default_storage': None,
             'available_collections': [],
 
@@ -250,6 +253,12 @@ class BulkAddPage:
         self.state['default_language'] = ui_state.get('bulk_default_lang', self.state['default_language'])
         self.state['default_condition'] = ui_state.get('bulk_default_cond', self.state['default_condition'])
         self.state['default_first_ed'] = ui_state.get('bulk_default_first', self.state['default_first_ed'])
+        self.state['default_edition'] = ui_state.get(
+            'bulk_default_edition',
+            '1st Edition' if self.state['default_first_ed'] else self.state['default_edition'],
+        )
+        # Keep the legacy bool in sync with the edition string.
+        self.state['default_first_ed'] = (self.state['default_edition'] == '1st Edition')
         self.state['default_storage'] = ui_state.get('bulk_default_storage', self.state['default_storage'])
 
         # Load update options
@@ -361,10 +370,11 @@ class BulkAddPage:
         # Apply
         await self.apply_collection_filters()
 
-    async def _update_collection(self, api_card, set_code, rarity, lang, qty, cond, first, img_id, mode='ADD', variant_id=None, save=True, storage_location=None):
+    async def _update_collection(self, api_card, set_code, rarity, lang, qty, cond, first, img_id, mode='ADD', variant_id=None, save=True, storage_location=None, edition=None):
         if not self.current_collection_obj or not self.state['selected_collection']:
             return False
 
+        eff_edition = edition or ('1st Edition' if first else 'Unlimited Edition')
         try:
             # Ensure variant exists in global DB (using app language)
             await ygo_service.ensure_card_variant(
@@ -387,7 +397,8 @@ class BulkAddPage:
                 image_id=img_id,
                 variant_id=variant_id,
                 mode=mode,
-                storage_location=storage_location
+                storage_location=storage_location,
+                edition=eff_edition
             )
 
             if modified:
@@ -624,6 +635,7 @@ class BulkAddPage:
             'lang': self.state['default_language'],
             'cond': self.state['default_condition'],
             'first': self.state['default_first_ed'],
+            'edition': self.state.get('default_edition', 'Unlimited Edition'),
             'storage': self.state['default_storage']
         }
 
@@ -741,7 +753,7 @@ class BulkAddPage:
         else:
             ui.notify("No valid cards found to add (check database update?)", type='warning')
 
-    async def add_card_to_collection(self, entry: LibraryEntry, lang, cond, first, qty):
+    async def add_card_to_collection(self, entry: LibraryEntry, lang, cond, first, qty, edition=None):
         final_set_code = transform_set_code(entry.set_code, lang)
 
         success = await self._update_collection(
@@ -754,7 +766,8 @@ class BulkAddPage:
             first=first,
             img_id=entry.image_id,
             mode='ADD',
-            storage_location=self.state['default_storage']
+            storage_location=self.state['default_storage'],
+            edition=edition or ('1st Edition' if first else self.state.get('default_edition', 'Unlimited Edition'))
         )
 
         if success:
@@ -862,7 +875,7 @@ class BulkAddPage:
              cond = self.state['default_condition']
              is_first = self.state['default_first_ed']
 
-             await self.add_card_to_collection(entry, lang, cond, is_first, 1)
+             await self.add_card_to_collection(entry, lang, cond, is_first, 1, edition=self.state.get('default_edition'))
 
         # REMOVE: Collection -> Library (Drag back to library to remove)
         elif from_id == 'collection-list' and to_id == 'library-list':
@@ -898,6 +911,7 @@ class BulkAddPage:
             'lang': self.state['default_language'],
             'cond': self.state['default_condition'],
             'first': self.state['default_first_ed'],
+            'edition': self.state.get('default_edition', 'Unlimited Edition'),
             'storage': self.state['default_storage']
         }
 
@@ -928,12 +942,14 @@ class BulkAddPage:
             new_lang = defaults['lang'] if apply_lang else entry.language
             new_cond = defaults['cond'] if apply_cond else entry.condition
             new_first = defaults['first'] if apply_first else entry.first_edition
+            new_edition = defaults['edition'] if apply_first else getattr(entry, 'edition', '1st Edition' if entry.first_edition else 'Unlimited Edition')
             new_storage = defaults['storage'] if apply_storage else entry.storage_location
 
             # Check if any change is actually needed
+            entry_edition = getattr(entry, 'edition', '1st Edition' if entry.first_edition else 'Unlimited Edition')
             if (new_lang == entry.language and
                 new_cond == entry.condition and
-                new_first == entry.first_edition and
+                new_edition == entry_edition and
                 new_storage == entry.storage_location):
                 continue
 
@@ -953,7 +969,8 @@ class BulkAddPage:
                 image_id=entry.image_id,
                 variant_id=entry.variant_id,
                 mode='ADD',
-                storage_location=entry.storage_location
+                storage_location=entry.storage_location,
+                edition=entry_edition
             )
 
             # ADD NEW
@@ -988,7 +1005,8 @@ class BulkAddPage:
                 image_id=entry.image_id,
                 variant_id=final_variant_id, # Re-use variant ID as basic properties (set/rarity) haven't changed
                 mode='ADD',
-                storage_location=new_storage
+                storage_location=new_storage,
+                edition=new_edition
             )
 
             if not final_variant_id:
@@ -1950,8 +1968,11 @@ class BulkAddPage:
                  ui.select(CARD_CONDITIONS, label='Cond',
                            value=self.state['default_condition'],
                            on_change=lambda e: [self.state.update({'default_condition': e.value}), persistence.save_ui_state({'bulk_default_cond': e.value})]).props('dense options-dense').classes('w-32')
-                 ui.checkbox('1st Ed', value=self.state['default_first_ed'],
-                             on_change=lambda e: [self.state.update({'default_first_ed': e.value}), persistence.save_ui_state({'bulk_default_first': e.value})]).props('dense')
+                 ui.select(CARD_EDITIONS, label='Edition', value=self.state['default_edition'],
+                           on_change=lambda e: [
+                               self.state.update({'default_edition': e.value, 'default_first_ed': (e.value == '1st Edition')}),
+                               persistence.save_ui_state({'bulk_default_edition': e.value, 'bulk_default_first': (e.value == '1st Edition')}),
+                           ]).props('dense options-dense').classes('w-40')
 
                  ui.select(storage_opts, label='Storage',
                            value=self.state['default_storage'],
@@ -2198,7 +2219,7 @@ class BulkAddPage:
                                         on_change=lambda e: [self.state.update({'update_apply_lang': e.value}), persistence.save_ui_state({'bulk_update_apply_lang': e.value})]).props('dense size=xs').classes('text-[10px]')
                             ui.checkbox('Cond', value=self.state['update_apply_cond'],
                                         on_change=lambda e: [self.state.update({'update_apply_cond': e.value}), persistence.save_ui_state({'bulk_update_apply_cond': e.value})]).props('dense size=xs').classes('text-[10px]')
-                            ui.checkbox('1st', value=self.state['update_apply_first'],
+                            ui.checkbox('Edition', value=self.state['update_apply_first'],
                                         on_change=lambda e: [self.state.update({'update_apply_first': e.value}), persistence.save_ui_state({'bulk_update_apply_first': e.value})]).props('dense size=xs').classes('text-[10px]')
                             ui.checkbox('Storage', value=self.state['update_apply_storage'],
                                         on_change=lambda e: [self.state.update({'update_apply_storage': e.value}), persistence.save_ui_state({'bulk_update_apply_storage': e.value})]).props('dense size=xs').classes('text-[10px]')

@@ -284,6 +284,19 @@ class YugipediaService:
     }
     _KNOWN_EDITION_CODES = {"1E", "UE", "LE"}
 
+    # File-name suffix tokens denoting non-standard printings we should not pick
+    # for a normal owned physical card (oversized/promo/media art variants).
+    _NOVELTY_FILE_TOKENS = {
+        "GC",      # Giant Card (oversized)
+        "VG",      # Video Game promo art
+        "Manga",   # Manga art
+        "Anime",   # Anime art
+        "OP",      # OTS pack / sneak-peek alt art (context dependent)
+        "NC",      # Non-card art
+        "CA",      # Card art (crop) only
+        "Jump",    # Shonen Jump promo art variant
+    }
+
     @staticmethod
     def _edition_code_from_filename(title: str) -> Optional[str]:
         """Return the edition code (1E/UE/LE) found in a file name, if any."""
@@ -320,7 +333,8 @@ class YugipediaService:
         language: str = "EN",
         rarity: Optional[str] = None,
         edition: Optional[str] = None,
-    ) -> Optional[str]:
+        return_meta: bool = False,
+    ):
         """Resolve the direct image URL of a card's printing in a given set.
 
         Uses the set code (its prefix, e.g. "TDGS" from "TDGS-EN040") plus the
@@ -336,14 +350,18 @@ class YugipediaService:
         ``LE``) is preferred. When not provided, 1st Edition is used as a mild
         default but Limited/Unlimited-only printings still resolve.
 
-        Returns None if no matching file can be found.
+        Returns None if no matching file can be found. When return_meta=True,
+        returns a (url, resolved_edition) tuple instead.
         """
+        def _fail():
+            return (None, None) if return_meta else None
+
         if not card_name or not set_code:
-            return None
+            return _fail()
 
         prefix = set_code.split("-")[0].strip()
         if not prefix:
-            return None
+            return _fail()
 
         name_key = self._normalize_card_name_for_file(card_name)
         lang = (language or "EN").strip().upper()
@@ -368,7 +386,7 @@ class YugipediaService:
                 response = await asyncio.to_thread(requests.get, self.API_URL, params=params, headers=self.HEADERS)
 
             if response.status_code != 200:
-                return None
+                return _fail()
 
             data = response.json()
             hits = [h.get("title", "") for h in data.get("query", {}).get("search", [])]
@@ -380,7 +398,28 @@ class YugipediaService:
                 if f"-{prefix}-" in t and name_lc in t.lower().replace("file:", "")
             ]
             if not candidates:
-                return None
+                return _fail()
+
+            # Exclude novelty / non-standard printings that are not the normal
+            # physical card. These suffix tokens denote oversized or alternate
+            # media variants and would otherwise be mis-selected (e.g.
+            # Tsukuyomi-SD6-EN-C-UE-GC = Giant Card, Salamandra-SDD-EN-VG =
+            # Video Game promo art without a real rarity segment).
+            #   GC = Giant Card, VG = Video Game, OP = OTS/other promo art,
+            #   DT = Duel Terminal art, Manga/Anime = media art.
+            def _file_tokens(title: str):
+                base = title[len("File:"):] if title.startswith("File:") else title
+                base = re.sub(r"\.[A-Za-z0-9]+$", "", base)
+                return base.split("-")
+
+            def _is_novelty(title: str) -> bool:
+                tokens = set(_file_tokens(title))
+                return bool(tokens & self._NOVELTY_FILE_TOKENS)
+
+            standard = [t for t in candidates if not _is_novelty(t)]
+            # Only fall back to novelty files if there are no standard ones at all.
+            if standard:
+                candidates = standard
 
             def _choose_edition(pool: list) -> str:
                 """Pick a file from a pool honoring edition preference.
@@ -427,12 +466,22 @@ class YugipediaService:
                         pool = rarity_matches
                 chosen = _choose_edition(pool)
 
+            # Determine the edition actually depicted by the chosen file, so the
+            # caller can label/cache it honestly (the requested edition may not
+            # exist, in which case we fell back to another print).
+            _code_to_edition = {"1E": "1st Edition", "UE": "Unlimited Edition", "LE": "Limited Edition"}
+            resolved_code = self._edition_code_from_filename(chosen)
+            resolved_edition = _code_to_edition.get(resolved_code)
+
             # chosen is a "File:..." title; resolve to a direct URL.
-            return await self.get_file_image_url(chosen)
+            url = await self.get_file_image_url(chosen)
+            if return_meta:
+                return url, resolved_edition
+            return url
 
         except Exception as e:
             logger.error(f"Error resolving set printing image for {card_name} / {set_code}: {e}")
-            return None
+            return (None, None) if return_meta else None
 
     async def get_deck_list(self, page_title: str) -> Dict[str, List[DeckCard]]:
         """

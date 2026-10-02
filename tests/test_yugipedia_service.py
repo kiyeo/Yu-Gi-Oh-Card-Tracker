@@ -400,6 +400,88 @@ CODE-EN002; Test Set 2; Common, Rare
             s._rarity_code_from_filename("File:Other-ABC-EN-R.png", "CDIP", "EN")
         )
 
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_excludes_giant_card_novelty_variant(self, mock_get):
+        # A Giant Card (-GC) exists alongside the standard file; pick standard.
+        search_resp = MagicMock()
+        search_resp.status_code = 200
+        search_resp.json.return_value = {
+            "query": {"search": [
+                {"title": "File:Tsukuyomi-SD6-EN-C-UE-GC.jpg"},
+                {"title": "File:Tsukuyomi-SD6-EN-C-1E.png"},
+            ]}
+        }
+        imageinfo_resp = MagicMock()
+        imageinfo_resp.status_code = 200
+        imageinfo_resp.json.return_value = {
+            "query": {"pages": {"1": {"imageinfo": [
+                {"url": "https://ms.yugipedia.com//Tsukuyomi-SD6-EN-C-1E.png"}
+            ]}}}
+        }
+        mock_get.side_effect = [search_resp, imageinfo_resp]
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(
+            self.service.get_set_printing_image_url("Tsukuyomi", "SD6-EN011", "EN", rarity="Common")
+        )
+        loop.close()
+        self.assertEqual(url, "https://ms.yugipedia.com//Tsukuyomi-SD6-EN-C-1E.png")
+        self.assertEqual(mock_get.call_args_list[1].kwargs["params"]["titles"],
+                         "File:Tsukuyomi-SD6-EN-C-1E.png")
+
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_excludes_video_game_variant_uses_region_fallback(self, mock_get):
+        # The -VG promo (no rarity) must be skipped; the real EU PScR picked.
+        search_resp = MagicMock()
+        search_resp.status_code = 200
+        search_resp.json.return_value = {
+            "query": {"search": [
+                {"title": "File:Salamandra-SDD-EN-VG.png"},
+                {"title": "File:Salamandra-SDD-EU-PScR-UE.png"},
+            ]}
+        }
+        imageinfo_resp = MagicMock()
+        imageinfo_resp.status_code = 200
+        imageinfo_resp.json.return_value = {
+            "query": {"pages": {"1": {"imageinfo": [
+                {"url": "https://ms.yugipedia.com//Salamandra-SDD-EU-PScR-UE.png"}
+            ]}}}
+        }
+        mock_get.side_effect = [search_resp, imageinfo_resp]
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(
+            self.service.get_set_printing_image_url("Salamandra", "SDD-EN003", "EN",
+                                                    rarity="Prismatic Secret Rare")
+        )
+        loop.close()
+        self.assertEqual(url, "https://ms.yugipedia.com//Salamandra-SDD-EU-PScR-UE.png")
+
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_return_meta_reports_resolved_edition(self, mock_get):
+        # Request Unlimited but only a Limited file exists -> url returned,
+        # resolved edition reported as Limited Edition.
+        search_resp = MagicMock(); search_resp.status_code = 200
+        search_resp.json.return_value = {"query": {"search": [
+            {"title": "File:StardustDragon-CT05-EN-ScR-LE.png"},
+        ]}}
+        info_resp = MagicMock(); info_resp.status_code = 200
+        info_resp.json.return_value = {"query": {"pages": {"1": {"imageinfo": [
+            {"url": "https://x/LE.png"}]}}}}
+        mock_get.side_effect = [search_resp, info_resp]
+
+        loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop)
+        url, resolved = loop.run_until_complete(
+            self.service.get_set_printing_image_url(
+                "Stardust Dragon", "CT05-EN002", "EN",
+                rarity="Secret Rare", edition="Unlimited Edition", return_meta=True)
+        )
+        loop.close()
+        self.assertEqual(url, "https://x/LE.png")
+        self.assertEqual(resolved, "Limited Edition")
+
     def test_edition_code_from_filename(self):
         s = self.service
         self.assertEqual(s._edition_code_from_filename("File:CyberEsper-CDIP-EN-UtR-1E.jpg"), "1E")
