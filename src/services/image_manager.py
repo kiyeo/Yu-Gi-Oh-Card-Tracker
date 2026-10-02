@@ -10,16 +10,61 @@ DATA_DIR = "data"
 IMAGES_DIR = os.path.join(DATA_DIR, "images")
 SETS_DIR = os.path.join(DATA_DIR, "sets")
 FLAGS_DIR = os.path.join(DATA_DIR, "flags")
+PRINTINGS_DIR = os.path.join(DATA_DIR, "printings")
 
 class ImageManager:
     def __init__(self, images_dir: str = IMAGES_DIR):
         self.images_dir = images_dir
         self.sets_dir = SETS_DIR
         self.flags_dir = FLAGS_DIR
+        self.printings_dir = PRINTINGS_DIR
         os.makedirs(self.images_dir, exist_ok=True)
         os.makedirs(self.sets_dir, exist_ok=True)
         os.makedirs(self.flags_dir, exist_ok=True)
+        os.makedirs(self.printings_dir, exist_ok=True)
         self.logger = logging.getLogger(__name__)
+
+    # --- Per-printing images (era-accurate card layout from Yugipedia) ---
+
+    @staticmethod
+    def printing_key(set_code: str, language: str) -> str:
+        """Stable filesystem key for a specific printing's image."""
+        raw = f"{(set_code or '').strip()}_{(language or '').strip().upper()}"
+        return "".join(c for c in raw if c.isalnum() or c in ('-', '_')).strip() or "unknown"
+
+    def get_printing_image_path(self, set_code: str, language: str) -> str:
+        return os.path.join(self.printings_dir, f"{self.printing_key(set_code, language)}.jpg")
+
+    def printing_image_exists(self, set_code: str, language: str) -> bool:
+        return os.path.exists(self.get_printing_image_path(set_code, language))
+
+    def get_printing_image_url(self, set_code: str, language: str) -> Optional[str]:
+        """Local static URL for a cached printing image, or None if not cached."""
+        if self.printing_image_exists(set_code, language):
+            return f"/printings/{self.printing_key(set_code, language)}.jpg"
+        return None
+
+    async def ensure_printing_image(self, set_code: str, language: str, url: str) -> Optional[str]:
+        """Download and cache a printing image (from a resolved Yugipedia URL)."""
+        if not url:
+            return None
+        local_path = self.get_printing_image_path(set_code, language)
+        if os.path.exists(local_path):
+            return local_path
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.read()
+                        await run.io_bound(self._write_file, local_path, data)
+                        return local_path
+                    self.logger.warning(
+                        f"Failed to download printing image {set_code}/{language}: {response.status}"
+                    )
+                    return None
+        except Exception as e:
+            self.logger.error(f"Error downloading printing image {set_code}/{language}: {e}")
+            return None
 
     def get_set_image_path(self, set_code: str) -> str:
         """Returns the local file path for a set image."""

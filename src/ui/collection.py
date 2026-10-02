@@ -11,6 +11,7 @@ from src.ui.components.single_card_view import SingleCardView
 from src.ui.theme import METRIC_VALUE_CLASSES, page_header
 from src.services.collection_editor import CollectionEditor
 from src.services.pricing_service import pricing_service
+from src.services.yugipedia_service import YugipediaService
 from dataclasses import dataclass, field, replace
 from typing import List, Optional, Dict, Set, Callable
 import asyncio
@@ -69,19 +70,21 @@ def build_consolidated_vms(api_cards: List[ApiCard], owned_details: Dict[int, Co
         owned_conds = set()
         owned_image_id = None
         if c_card:
-            # Pick the artwork of the most-owned variant that has a valid image.
-            valid_image_ids = {img.id for img in card.card_images} if card.card_images else set()
+            # Pick the artwork of the most-owned variant. Resolve the printing's
+            # image via the owned image_id, falling back to the matching API set
+            # art, then the card default — so this works even when the owned
+            # variant didn't record an explicit image_id.
             best_variant_qty = -1
             for v in c_card.variants:
                 for e in v.entries:
                     owned_langs.add(e.language)
                     owned_conds.add(e.condition)
                 v_qty = v.total_quantity
-                if v_qty > best_variant_qty and v.image_id is not None and (
-                    not valid_image_ids or v.image_id in valid_image_ids
-                ):
-                    best_variant_qty = v_qty
-                    owned_image_id = v.image_id
+                if v_qty > best_variant_qty:
+                    resolved = resolve_printing_image_id(card, v.set_code, v.rarity, v.image_id)
+                    if resolved is not None:
+                        best_variant_qty = v_qty
+                        owned_image_id = resolved
 
         lowest = 0.0
         prices = []
@@ -157,6 +160,48 @@ def get_display_price_for_variant(card: ApiCard, variant_id: Optional[str] = Non
 
     return price
 
+def resolve_printing_image_id(card: ApiCard, set_code: Optional[str], rarity: Optional[str], explicit_image_id: Optional[int]) -> Optional[int]:
+    """Resolve the artwork image_id for a specific printing.
+
+    Resolution order:
+      1. An explicit image_id recorded on the owned variant (if valid).
+      2. The image_id of the matching ApiCardSet (same set_code, and rarity if
+         available) — this is the artwork Yu-Gi-Oh! APIs associate with that
+         printing, used when the owned variant didn't record one.
+      3. The card's default (first) image id.
+    """
+    valid_ids = {img.id for img in card.card_images} if card.card_images else set()
+
+    # 1. Explicit, valid id.
+    if explicit_image_id is not None and (not valid_ids or explicit_image_id in valid_ids):
+        return explicit_image_id
+
+    # 2. Match the API set entry for this printing.
+    if set_code and card.card_sets:
+        norm_target = normalize_set_code(set_code)
+        best = None
+        for s in card.card_sets:
+            if s.image_id is None:
+                continue
+            if valid_ids and s.image_id not in valid_ids:
+                continue
+            exact_code = (s.set_code == set_code)
+            norm_code = (normalize_set_code(s.set_code) == norm_target)
+            rarity_ok = (rarity is None or s.set_rarity == rarity)
+            if exact_code and rarity_ok:
+                best = s.image_id
+                break
+            if norm_code and rarity_ok and best is None:
+                best = s.image_id
+        if best is not None:
+            return best
+
+    # 3. Default.
+    if card.card_images:
+        return card.card_images[0].id
+    return explicit_image_id
+
+
 def build_collector_rows(api_cards: List[ApiCard], owned_details: Dict[int, CollectionCard], language: str) -> List[CollectorRow]:
     rows = []
 
@@ -205,11 +250,17 @@ def build_collector_rows(api_cards: List[ApiCard], owned_details: Dict[int, Coll
                         k = (entry.language, entry.condition, entry.first_edition)
                         groups[k] = groups.get(k, 0) + entry.quantity
 
-                    # Resolve image
+                    # Resolve image. When "match owned artwork" is enabled, prefer
+                    # the artwork of the specific printing owned (falling back to
+                    # the matching API set art when the variant has no image_id).
+                    row_image_id = cv.image_id
+                    if config_manager.get_match_owned_artwork():
+                        row_image_id = resolve_printing_image_id(card, cv.set_code, rarity, cv.image_id)
+
                     row_img_url = img_url
-                    if cv.image_id:
+                    if row_image_id:
                          for img in card.card_images:
-                             if img.id == cv.image_id:
+                             if img.id == row_image_id:
                                  row_img_url = img.image_url_small
                                  break
 
@@ -238,7 +289,7 @@ def build_collector_rows(api_cards: List[ApiCard], owned_details: Dict[int, Coll
                             language=lang,
                             condition=cond,
                             first_edition=first,
-                            image_id=cv.image_id,
+                            image_id=row_image_id,
                             variant_id=cv.variant_id,
                             entries=group_entries
                         ))
@@ -434,6 +485,7 @@ class CollectionPage:
         self.api_card_map = {}
         self.save_task = None
         self.metrics = None
+        self.yugipedia_service = YugipediaService()
 
     async def _perform_save(self):
         try:
@@ -575,6 +627,26 @@ class CollectionPage:
             return vm.owned_image_id
         return vm.api_card.get_best_image_id()
 
+    def _collector_row_image_src(self, item: 'CollectorRow') -> Optional[str]:
+        """Image src for a collector row.
+
+        When 'match owned artwork' is on and this printing's era-accurate image
+        has been cached from Yugipedia, use it. Otherwise fall back to the
+        standard per-illustration local image, then the remote URL.
+        """
+        if (config_manager.get_match_owned_artwork() and item.is_owned
+                and item.set_code and item.set_code not in ('N/A', '')):
+            printing_url = image_manager.get_printing_image_url(item.set_code, item.language)
+            if printing_url:
+                return printing_url
+
+        img_id = item.image_id if item.image_id else (
+            item.api_card.card_images[0].id if item.api_card.card_images else item.api_card.id
+        )
+        if image_manager.image_exists(img_id):
+            return f"/images/{img_id}.jpg"
+        return item.image_url
+
     async def prepare_current_page_images(self):
         start = (self.state['page'] - 1) * self.state['page_size']
         end = min(start + self.state['page_size'], len(self.state['filtered_items']))
@@ -633,6 +705,58 @@ class CollectionPage:
              if unique_codes:
                  tasks = [image_manager.ensure_flag_image(code) for code in unique_codes]
                  await asyncio.gather(*tasks)
+
+        # When "match owned artwork" is enabled, fetch era-accurate printing
+        # images from Yugipedia for the owned items on this page (cached locally).
+        if config_manager.get_match_owned_artwork():
+            await self._prefetch_printing_images(items)
+
+    async def _prefetch_printing_images(self, items):
+        """Resolve + cache Yugipedia printing images for owned items on a page.
+
+        Each distinct (set_code, language) is fetched at most once. Images are
+        cached under data/printings and served via /printings. Failures are
+        silently ignored so the view falls back to the default artwork.
+        """
+        # Collect distinct owned printings needing a cached image.
+        pending = {}  # (set_code, language) -> card_name
+        for item in items:
+            set_code = getattr(item, 'set_code', None)
+            is_owned = getattr(item, 'is_owned', False) or getattr(item, 'owned_quantity', 0) > 0
+            if not set_code or not is_owned or set_code in ('N/A', ''):
+                continue
+            # Consolidated VMs don't carry a single set_code; handled per-variant
+            # via the collectors view. Here we only act on items exposing set_code.
+            language = getattr(item, 'language', None) or self.state['language']
+            card = item.api_card
+            key = (set_code, language.strip().upper())
+            if key in pending:
+                continue
+            if image_manager.printing_image_exists(set_code, language):
+                continue
+            pending[key] = card.name
+
+        if not pending:
+            return
+
+        semaphore = asyncio.Semaphore(5)
+
+        async def _resolve_one(set_code, language, card_name):
+            async with semaphore:
+                try:
+                    url = await self.yugipedia_service.get_set_printing_image_url(
+                        card_name, set_code, language
+                    )
+                    if url:
+                        await image_manager.ensure_printing_image(set_code, language, url)
+                except Exception as e:
+                    logger.debug(f"Printing image fetch failed for {card_name}/{set_code}: {e}")
+
+        tasks = [
+            _resolve_one(set_code, language, name)
+            for (set_code, language), name in pending.items()
+        ]
+        await asyncio.gather(*tasks)
 
     async def apply_filters(self, e=None, reset_page=True):
         if self.state['view_scope'] == 'consolidated':
@@ -1527,10 +1651,7 @@ class CollectionPage:
             for item in items:
                 bg = 'bg-gray-900' if not item.is_owned else 'bg-gray-800 border border-accent'
 
-                img_src = item.image_url
-                img_id = item.image_id if item.image_id else (item.api_card.card_images[0].id if item.api_card.card_images else item.api_card.id)
-                if image_manager.image_exists(img_id):
-                    img_src = f"/images/{img_id}.jpg"
+                img_src = self._collector_row_image_src(item)
 
                 with ui.grid(columns=cols).classes(f'w-full {bg} p-1 items-center rounded hover:bg-gray-700 transition cursor-pointer') \
                         .on('click', lambda c=item: self.open_single_view(c.api_card, c.is_owned, c.owned_count, initial_set=c.set_code, rarity=c.rarity, set_name=c.set_name, language=c.language, condition=c.condition, first_edition=c.first_edition, image_url=c.image_url, image_id=c.image_id, set_price=c.price, variant_id=c.variant_id)):
@@ -1573,10 +1694,7 @@ class CollectionPage:
                 opacity = "opacity-100" if item.is_owned else "opacity-60 grayscale"
                 border = "border-accent" if item.is_owned else "border-gray-700"
 
-                img_src = item.image_url
-                img_id = item.image_id if item.image_id else (item.api_card.card_images[0].id if item.api_card.card_images else item.api_card.id)
-                if image_manager.image_exists(img_id):
-                    img_src = f"/images/{img_id}.jpg"
+                img_src = self._collector_row_image_src(item)
 
                 with ui.card().classes(f'collection-card w-full p-0 cursor-pointer {opacity} border {border} hover:scale-105 transition-transform') \
                         .on('click', lambda c=item: self.open_single_view(c.api_card, c.is_owned, c.owned_count, initial_set=c.set_code, rarity=c.rarity, set_name=c.set_name, language=c.language, condition=c.condition, first_edition=c.first_edition, image_url=c.image_url, image_id=c.image_id, set_price=c.price, variant_id=c.variant_id)):

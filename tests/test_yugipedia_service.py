@@ -190,6 +190,82 @@ CODE-EN002; Test Set 2; Common, Rare
         self.assertEqual(deck_map["Structure Deck: B"].deck_type, 'STRUCTURE')
 
     @patch('src.services.yugipedia_service.requests.get')
+    def test_get_set_printing_image_url_prefers_first_edition(self, mock_get):
+        search_resp = MagicMock()
+        search_resp.status_code = 200
+        search_resp.json.return_value = {
+            "query": {"search": [
+                {"title": "File:StardustDragon-TDGS-EN-UR-UE.png"},
+                {"title": "File:StardustDragon-TDGS-EN-UR-1E.png"},
+                {"title": "File:StardustDragon-TDGS-JP-C.jpg"},
+            ]}
+        }
+        imageinfo_resp = MagicMock()
+        imageinfo_resp.status_code = 200
+        imageinfo_resp.json.return_value = {
+            "query": {"pages": {"1": {"imageinfo": [
+                {"url": "https://ms.yugipedia.com//StardustDragon-TDGS-EN-UR-1E.png"}
+            ]}}}
+        }
+        # First call = search, second = imageinfo for the chosen file.
+        mock_get.side_effect = [search_resp, imageinfo_resp]
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(
+            self.service.get_set_printing_image_url("Stardust Dragon", "TDGS-EN040", "EN")
+        )
+        loop.close()
+
+        self.assertEqual(url, "https://ms.yugipedia.com//StardustDragon-TDGS-EN-UR-1E.png")
+        # The second request must target the 1E file via imageinfo.
+        second_params = mock_get.call_args_list[1].kwargs["params"]
+        self.assertEqual(second_params["prop"], "imageinfo")
+        self.assertEqual(second_params["titles"], "File:StardustDragon-TDGS-EN-UR-1E.png")
+
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_get_set_printing_image_url_region_fallback(self, mock_get):
+        # Only NA-region files exist (old set); EN maps to NA fallback.
+        search_resp = MagicMock()
+        search_resp.status_code = 200
+        search_resp.json.return_value = {
+            "query": {"search": [
+                {"title": "File:Sogen-SDK-NA-C-1E.jpg"},
+            ]}
+        }
+        imageinfo_resp = MagicMock()
+        imageinfo_resp.status_code = 200
+        imageinfo_resp.json.return_value = {
+            "query": {"pages": {"1": {"imageinfo": [
+                {"url": "https://ms.yugipedia.com//Sogen-SDK-NA-C-1E.jpg"}
+            ]}}}
+        }
+        mock_get.side_effect = [search_resp, imageinfo_resp]
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(
+            self.service.get_set_printing_image_url("Sogen", "SDK-EN020", "EN")
+        )
+        loop.close()
+        self.assertEqual(url, "https://ms.yugipedia.com//Sogen-SDK-NA-C-1E.jpg")
+
+    @patch('src.services.yugipedia_service.requests.get')
+    def test_get_set_printing_image_url_no_match(self, mock_get):
+        search_resp = MagicMock()
+        search_resp.status_code = 200
+        search_resp.json.return_value = {"query": {"search": []}}
+        mock_get.return_value = search_resp
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        url = loop.run_until_complete(
+            self.service.get_set_printing_image_url("Nonexistent", "ZZZ-EN999", "EN")
+        )
+        loop.close()
+        self.assertIsNone(url)
+
+    @patch('src.services.yugipedia_service.requests.get')
     def test_get_file_image_url_success(self, mock_get):
         # Mirrors the MediaWiki imageinfo response shape for a File: page.
         mock_resp = MagicMock()

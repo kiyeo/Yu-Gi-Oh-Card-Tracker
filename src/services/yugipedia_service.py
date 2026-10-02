@@ -198,6 +198,110 @@ class YugipediaService:
             logger.error(f"Error fetching file image for {file_name}: {e}")
             return None
 
+    # Region codes to try (in order) for a given language, since older sets
+    # used region codes (NA/EU) rather than the language code (EN).
+    _REGION_FALLBACKS = {
+        "EN": ["EN", "NA", "EU", "E", "AE"],
+        "DE": ["DE", "G"],
+        "FR": ["FR", "F"],
+        "IT": ["IT", "I"],
+        "PT": ["PT", "P"],
+        "ES": ["SP", "ES", "S"],
+        "JP": ["JP", "JA", "J"],
+    }
+
+    @staticmethod
+    def _normalize_card_name_for_file(card_name: str) -> str:
+        """Yugipedia file names strip spaces and most punctuation from the card
+        name (keeping letters/digits). Mirror that so our search matches."""
+        return re.sub(r"[^A-Za-z0-9]", "", card_name or "")
+
+    async def get_set_printing_image_url(
+        self,
+        card_name: str,
+        set_code: str,
+        language: str = "EN",
+    ) -> Optional[str]:
+        """Resolve the direct image URL of a card's printing in a given set.
+
+        Uses the set code (its prefix, e.g. "TDGS" from "TDGS-EN040") plus the
+        card name to find the matching Yugipedia File: page, then returns the
+        direct image URL. The returned image depicts the actual printing — and
+        therefore the era-appropriate card layout/frame.
+
+        Edition preference: 1st Edition (``-1E``) is preferred over Unlimited
+        (``-UE``) or no-edition files, since the user asked for the oldest /
+        first-edition layout.
+
+        Returns None if no matching file can be found.
+        """
+        if not card_name or not set_code:
+            return None
+
+        prefix = set_code.split("-")[0].strip()
+        if not prefix:
+            return None
+
+        name_key = self._normalize_card_name_for_file(card_name)
+        lang = (language or "EN").strip().upper()
+        regions = self._REGION_FALLBACKS.get(lang, [lang])
+
+        params = {
+            "action": "query",
+            "list": "search",
+            # Search file namespace for the card name + set prefix.
+            "srsearch": f'File:"{name_key}-{prefix}-"',
+            "srnamespace": 6,
+            "srlimit": 50,
+            "format": "json",
+        }
+
+        try:
+            if hasattr(run, 'io_bound'):
+                response = await run.io_bound(requests.get, self.API_URL, params=params, headers=self.HEADERS)
+            else:
+                response = await asyncio.to_thread(requests.get, self.API_URL, params=params, headers=self.HEADERS)
+
+            if response.status_code != 200:
+                return None
+
+            data = response.json()
+            hits = [h.get("title", "") for h in data.get("query", {}).get("search", [])]
+
+            # Keep files for this card + set prefix only.
+            name_lc = name_key.lower()
+            candidates = [
+                t for t in hits
+                if f"-{prefix}-" in t and name_lc in t.lower().replace("file:", "")
+            ]
+            if not candidates:
+                return None
+
+            def pick_for_region(region: str) -> Optional[str]:
+                region_files = [t for t in candidates if f"-{prefix}-{region}-" in t]
+                if not region_files:
+                    return None
+                # Prefer 1st Edition, then anything else; stable order otherwise.
+                first_ed = [t for t in region_files if "-1E" in t]
+                return (first_ed or region_files)[0]
+
+            chosen = None
+            for region in regions:
+                chosen = pick_for_region(region)
+                if chosen:
+                    break
+            # Last resort: any candidate (prefer 1st edition).
+            if not chosen:
+                first_ed = [t for t in candidates if "-1E" in t]
+                chosen = (first_ed or candidates)[0]
+
+            # chosen is a "File:..." title; resolve to a direct URL.
+            return await self.get_file_image_url(chosen)
+
+        except Exception as e:
+            logger.error(f"Error resolving set printing image for {card_name} / {set_code}: {e}")
+            return None
+
     async def get_deck_list(self, page_title: str) -> Dict[str, List[DeckCard]]:
         """
         Fetches the card list for a structure deck.

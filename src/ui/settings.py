@@ -44,21 +44,24 @@ def settings_page() -> None:
             def on_match_artwork_change(event) -> None:
                 config_manager.set_match_owned_artwork(bool(event.value))
                 ui.notify(
-                    'Owned cards will now show the artwork you own.'
+                    'Owned cards will show the era-accurate layout of the set you own '
+                    '(fetched from Yugipedia). Reload the Collection page to apply.'
                     if event.value else
                     'Owned cards will show the default artwork.',
                     type='positive',
                 )
 
             with ui.switch(
-                'Match owned card artwork',
+                'Match owned printing layout',
                 value=config_manager.get_match_owned_artwork(),
                 on_change=on_match_artwork_change,
             ):
                 ui.tooltip(
-                    'In the Collection view, show owned cards using the artwork of '
-                    'the specific variant you own instead of the default artwork. '
-                    'Reload the Collection page to apply.'
+                    'In the Collection view, show owned cards using the actual image '
+                    'of the printing you own (by set code), which reflects the '
+                    "era's card layout/frame. Images are fetched from Yugipedia and "
+                    'cached locally; the first load of each printing needs a network '
+                    'connection. Reload the Collection page to apply.'
                 )
 
             async def save_application_settings() -> None:
