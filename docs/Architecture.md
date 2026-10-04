@@ -87,7 +87,7 @@ Collection
 
 - `CollectionCard` groups an abstract card identity by API card ID.
 - `CollectionVariant` identifies a printing. Its deterministic ID incorporates card ID, set code, rarity, and image ID so alternate artwork remains distinct.
-- `CollectionEntry` represents a physical stack. Entries with the same condition, language, **edition**, and storage location share one quantity. Each entry also carries optional `purchase_price` / `purchase_date` (editable per stack via the single-card view's **Purchase info** sub-dialog) and a separate `scan_timestamp` the scanner uses so it never overwrites a real purchase date.
+- `CollectionEntry` represents a physical stack. Entries with the same condition, language, **edition**, and storage location share one stack. Within a stack, each acquisition is a `PurchaseLot` (quantity + purchase price + date), so later buys keep their own historical cost; the stack `quantity` is the sum of its lots. A separate `scan_timestamp` lets the scanner stamp acquisitions without touching a real purchase date. See the **Purchase lots** section below.
 - `ApiCard` reference objects come from the local API cache and are joined at runtime. They are not serialized into a user's collection.
 
 ### Edition field
@@ -95,6 +95,16 @@ Collection
 `CollectionEntry.edition` is a string with three values: `"1st Edition"`, `"Unlimited Edition"`, or `"Limited Edition"` (default `"Unlimited Edition"`). It is the source of truth for a copy's print edition and participates in entry identity (two copies that differ only by edition are distinct stacks).
 
 For backward compatibility the legacy boolean `first_edition` is retained as a synced mirror: a Pydantic `model_validator` reconciles the two fields on load, so existing collection files (which only have `first_edition`) migrate transparently — `first_edition: true → edition: "1st Edition"`, `false → "Unlimited Edition"`. New code should prefer `edition`; `first_edition` remains available for callers (scanner, import) that have not been extended to the three-state model.
+
+### Purchase lots
+
+A `CollectionEntry` (a stack) holds a `purchases: List[PurchaseLot]`, where each `PurchaseLot` is one acquisition: `{quantity, purchase_price, purchase_date}`. This lets a later purchase of the same printing keep its own historical cost instead of overwriting the earlier one. Rules:
+
+- `CollectionEntry.quantity` is kept equal to the sum of its lot quantities (a `model_validator` and `sync_quantity()` maintain this). All existing readers of `entry.quantity` keep working.
+- The scalar `purchase_price` / `purchase_date` fields are kept as compatibility mirrors of the first (primary) lot.
+- Migration: entries from old files (no `purchases`) are converted to a single lot from the legacy `quantity` + `purchase_price` + `purchase_date` on load.
+- `CollectionEditor.apply_change(..., mode='ADD')` appends a **new lot** (so each acquisition is distinct); removing copies drains lots oldest-first (FIFO). `CollectionEditor.set_lot_purchase_info(...)` edits one lot's price/date. The single-card view's **Purchase info** dialog shows one row per lot.
+- Market value remains per-stack; purchase price is per-lot historical cost.
 
 A shortened collection file looks like this:
 
@@ -127,9 +137,14 @@ A shortened collection file looks like this:
               "first_edition": true,
               "quantity": 2,
               "storage_location": "Binder 1",
-              "purchase_price": 0.0,
+              "purchases": [
+                { "quantity": 1, "purchase_price": 5.00, "purchase_date": "2025-01-15" },
+                { "quantity": 1, "purchase_price": 8.50, "purchase_date": "2025-06-02" }
+              ],
+              "purchase_price": 5.00,
               "market_value": 0.0,
-              "purchase_date": null
+              "purchase_date": "2025-01-15",
+              "scan_timestamp": null
             }
           ]
         }

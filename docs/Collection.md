@@ -36,7 +36,7 @@ This dialog allows precise management of a card's inventory.
 - **Variant Selection**: Choose Set Code, Rarity, Condition, Language, and Edition.
 - **Edition**: Each copy records its print edition — **1st Edition**, **Unlimited Edition**, or **Limited Edition**. Copies that differ only by edition are tracked as separate stacks. In the card badges, 1st Edition shows as `1st`, Limited as `LTD`, and Unlimited is left blank.
 - **Storage**: Assign the card to a specific Box or Binder directly from this view.
-- **Purchase info**: Opens a sub-dialog listing each owned stack of the printing with editable **purchase price** and **purchase date**. These are per-stack and are saved without changing quantity or other inventory fields. (The scanner records its own separate `scan_timestamp`, so scanning never overwrites a real purchase date.)
+- **Purchase info**: Opens a sub-dialog listing **one row per purchase** across every owned stack of the card, each with its own editable **purchase price** and **purchase date**. Because each acquisition is a separate lot, buying another copy later keeps its own cost instead of overwriting the earlier one. Editing price/date never changes quantity. (The scanner records its own separate `scan_timestamp`, so scanning never overwrites a real purchase date.)
 - **Save**: Commits changes to your collection.
 
 ## 4. Owned printing artwork (optional)

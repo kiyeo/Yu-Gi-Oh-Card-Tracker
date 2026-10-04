@@ -469,19 +469,18 @@ class SingleCardView:
                     ui.label(str(e.quantity)).classes('text-xs font-bold oy-text-accent')
 
     def _render_purchase_info_button(self, card: ApiCard, current_collection, variant_id=None, on_saved=None):
-        """Render a 'Purchase info' button that opens a per-entry price/date editor.
+        """Render a 'Purchase info' button opening a per-LOT price/date editor.
 
-        Lists **every** owned entry (stack) of this card — across all variants
-        (set/rarity/artwork) — and lets the user edit only purchase_price /
-        purchase_date. Inventory (quantity/condition/etc.) is edited elsewhere;
-        this touches purchase fields only via
-        CollectionEditor.set_entry_purchase_info. `on_saved`, if provided, is
-        awaited after a successful save so the opener can persist + refresh.
+        Lists one row per purchase lot across every owned stack of this card,
+        so each acquisition (e.g. a second Ryko bought later) keeps its own
+        price/date. Editing touches only lot price/date via
+        CollectionEditor.set_lot_purchase_info. `on_saved`, if provided, is
+        awaited after a save so the opener can persist + refresh.
         """
         from src.services.collection_editor import CollectionEditor
 
-        def _all_entries():
-            """Return [(variant, entry), ...] for every owned stack of the card."""
+        def _all_lots():
+            """Return [(variant, entry, lot_index, lot), ...] for every lot."""
             result = []
             if not current_collection:
                 return result
@@ -489,46 +488,47 @@ class SingleCardView:
                 if c.card_id == card.id:
                     for v in c.variants:
                         for e in v.entries:
-                            if e.quantity > 0:
-                                result.append((v, e))
+                            for idx, lot in enumerate(e.purchases):
+                                if lot.quantity > 0:
+                                    result.append((v, e, idx, lot))
             return result
 
         async def open_dialog():
-            entries = _all_entries()
+            lots = _all_lots()
             with ui.dialog() as d, ui.card().classes('oy-single-card-dialog w-[95vw] max-w-4xl p-5 sm:p-6 gap-3'):
                 ui.label('Purchase Info').classes('oy-single-card-title text-2xl')
-                ui.label('Record what you paid and when — one row per owned stack.').classes('oy-text-muted mb-2')
+                ui.label('One row per purchase — later buys keep their own price/date.').classes('oy-text-muted mb-2')
 
-                if not entries:
-                    ui.label('No owned stacks for this card yet.').classes('oy-text-faint italic')
+                if not lots:
+                    ui.label('No owned copies for this card yet.').classes('oy-text-faint italic')
                 else:
                     rows = []
                     with ui.grid(columns=8).classes('w-full gap-2 items-center'):
                         for h in ['Set', 'Rarity', 'Cond', 'Lang', 'Edition', 'Qty', 'Price', 'Date']:
                             ui.label(h).classes('oy-seclabel select-none')
-                        for v, e in entries:
+                        for v, e, idx, lot in lots:
                             ui.label(v.set_code).classes('text-xs font-mono oy-text-gold')
                             ui.label(v.rarity).classes('text-xs')
                             ui.label(e.condition).classes('text-xs')
                             ui.label(e.language).classes('text-xs')
                             ui.label(e.edition).classes('text-xs')
-                            ui.label(str(e.quantity)).classes('text-xs')
-                            price_in = ui.number(value=e.purchase_price or 0.0, min=0, format='%.2f') \
+                            ui.label(str(lot.quantity)).classes('text-xs')
+                            price_in = ui.number(value=lot.purchase_price or 0.0, min=0, format='%.2f') \
                                 .props('dense dark').classes('w-full')
-                            date_in = ui.input(value=e.purchase_date or '') \
+                            date_in = ui.input(value=lot.purchase_date or '') \
                                 .props('dense dark type=date').classes('w-full')
-                            rows.append((v, e, price_in, date_in))
+                            rows.append((v, e, idx, price_in, date_in))
 
                     async def do_save():
                         changed = False
-                        for v, e, price_in, date_in in rows:
+                        for v, e, idx, price_in, date_in in rows:
                             price_val = float(price_in.value) if price_in.value is not None else None
                             date_val = (date_in.value or '').strip() or None
-                            if CollectionEditor.set_entry_purchase_info(
+                            if CollectionEditor.set_lot_purchase_info(
                                 current_collection, card.id, v.variant_id,
                                 language=e.language, condition=e.condition,
-                                storage_location=e.storage_location, edition=e.edition,
-                                first_edition=e.first_edition,
+                                storage_location=e.storage_location, lot_index=idx,
+                                edition=e.edition, first_edition=e.first_edition,
                                 purchase_price=price_val, purchase_date=date_val,
                             ):
                                 changed = True

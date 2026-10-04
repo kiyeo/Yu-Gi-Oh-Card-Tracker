@@ -43,10 +43,12 @@ The data structure is hierarchical to support aggregation and variant management
     *   Key: `variant_id` (Hash of card_id + set_code + rarity + image_id).
     *   *Critical*: Image ID is part of the key to support Alt Arts in same set.
 4.  **`CollectionEntry`**: A physical stack of cards.
-    *   Fields: `condition`, `language`, `edition`, `first_edition`, `storage_location`, `quantity`.
+    *   Fields: `condition`, `language`, `edition`, `first_edition`, `storage_location`, `quantity`, `purchases`.
     *   `edition`: String — `"1st Edition"`, `"Unlimited Edition"`, or `"Limited Edition"` (default `"Unlimited Edition"`). **Source of truth** for print edition.
     *   `first_edition`: Legacy boolean, kept as a synced mirror of `edition == "1st Edition"` via a `model_validator` on `CollectionEntry`. Old collection files (boolean-only) migrate transparently on load. Prefer `edition` in new code; `first_edition` is still honored by callers not yet migrated (scanner, import).
-    *   *Logic*: Entries are unique by (Cond + Lang + **Edition** + Storage). Adding a 2nd "Near Mint EN Unlimited" card increments `quantity` of the existing entry; a Limited Edition copy of the same card is a **separate** entry.
+    *   `purchases`: `List[PurchaseLot]` where each lot = `{quantity, purchase_price, purchase_date}`. **Source of truth** for per-acquisition cost. `quantity` is kept equal to `sum(lot.quantity)` (via `model_validator` / `entry.sync_quantity()`); the scalar `purchase_price`/`purchase_date` mirror the first lot for legacy readers. `apply_change(mode='ADD')` appends a new lot; removals drain FIFO. Old files migrate to a single lot on load.
+    *   `scan_timestamp`: Set by the scanner; keeps a real `purchase_date` from being overwritten.
+    *   *Logic*: Entries are unique by (Cond + Lang + **Edition** + Storage). Adding a 2nd "Near Mint EN Unlimited" card adds a **new purchase lot** to the existing entry (so a later buy keeps its own price/date); the stack's `quantity` becomes the sum of lots. A Limited Edition copy of the same card is a **separate** entry.
 
 ### 3.2. Reference Data (`ApiCard`)
 *   `ApiCard` objects are transient (loaded from `card_db.json` cache).

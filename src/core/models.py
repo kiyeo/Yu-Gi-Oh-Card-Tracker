@@ -4,6 +4,18 @@ import uuid
 
 # --- Collection Models ---
 
+class PurchaseLot(BaseModel):
+    """A single acquisition within a stack: N copies bought at one price/date.
+
+    A stack (CollectionEntry) can hold multiple lots, so buying more copies of
+    the same printing later records a separate historical cost rather than
+    overwriting the earlier purchase.
+    """
+    quantity: int = 1
+    purchase_price: Optional[float] = 0.0
+    purchase_date: Optional[str] = None
+
+
 class CollectionEntry(BaseModel):
     condition: Literal["Mint", "Near Mint", "Excellent", "Good", "Light Played", "Played", "Poor", "Damaged"] = "Near Mint"
     language: str = "EN"
@@ -13,6 +25,10 @@ class CollectionEntry(BaseModel):
     first_edition: bool = False
     quantity: int = 1
     storage_location: Optional[str] = Field(None, description="e.g., Box A, Row 2")
+    # Per-acquisition historical cost. `purchase_price`/`purchase_date` below are
+    # kept as compatibility mirrors of the first lot; `purchases` is the source
+    # of truth. `quantity` is kept equal to the sum of lot quantities.
+    purchases: List[PurchaseLot] = []
     purchase_price: Optional[float] = 0.0
     market_value: Optional[float] = 0.0
     purchase_date: Optional[str] = None
@@ -51,6 +67,42 @@ class CollectionEntry(BaseModel):
         # If neither provided, defaults apply (Unlimited / False), already
         # consistent.
         return data
+
+    @model_validator(mode="after")
+    def _reconcile_purchases(self):
+        """Migrate legacy data to lots and keep quantity/mirrors consistent.
+
+        - If no lots exist, synthesize one from the legacy quantity +
+          purchase_price + purchase_date (so old files Just Work).
+        - Keep `quantity` equal to the sum of lot quantities.
+        - Mirror the first lot's price/date into the legacy scalar fields for
+          any reader not yet migrated to `purchases`.
+        """
+        if not self.purchases:
+            self.purchases = [PurchaseLot(
+                quantity=max(0, self.quantity),
+                purchase_price=self.purchase_price,
+                purchase_date=self.purchase_date,
+            )]
+        # Keep the stack quantity in sync with its lots.
+        self.quantity = sum(max(0, lot.quantity) for lot in self.purchases)
+        # Compatibility mirrors of the primary (first) lot.
+        primary = self.purchases[0]
+        self.purchase_price = primary.purchase_price
+        self.purchase_date = primary.purchase_date
+        return self
+
+    def sync_quantity(self) -> None:
+        """Recompute `quantity` from lots and refresh the compat mirrors.
+
+        Callers that mutate `purchases` directly should call this afterwards.
+        """
+        self.purchases = [lot for lot in self.purchases if lot.quantity > 0]
+        self.quantity = sum(lot.quantity for lot in self.purchases)
+        if self.purchases:
+            self.purchase_price = self.purchases[0].purchase_price
+            self.purchase_date = self.purchases[0].purchase_date
+
 
 class StorageDefinition(BaseModel):
     name: str

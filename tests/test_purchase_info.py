@@ -5,119 +5,139 @@ import unittest
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
 from src.core.models import (
-    Collection, CollectionCard, CollectionVariant, CollectionEntry,
+    Collection, CollectionCard, CollectionVariant, CollectionEntry, PurchaseLot,
     ApiCard, ApiCardImage,
 )
 from src.services.collection_editor import CollectionEditor
 
 
+def _card(card_id=1, name="X"):
+    return ApiCard(id=card_id, name=name, type="Normal Monster", frameType="normal",
+                   desc="", card_images=[ApiCardImage(id=10, image_url="u", image_url_small="s")])
+
+
 class TestScanTimestampField(unittest.TestCase):
-    def test_scan_timestamp_defaults_none_and_is_independent(self):
+    def test_scan_timestamp_independent_of_purchase_date(self):
         e = CollectionEntry(quantity=1)
-        self.assertIsNone(e.scan_timestamp)
-        self.assertIsNone(e.purchase_date)
         e.scan_timestamp = "2026-01-01T00:00:00"
-        self.assertIsNone(e.purchase_date)  # not clobbered
+        self.assertIsNone(e.purchase_date)
 
-    def test_roundtrip_preserves_both(self):
-        e = CollectionEntry(quantity=1, purchase_date="2025-05-05", scan_timestamp="2026-01-01T00:00:00")
+
+class TestLotMigration(unittest.TestCase):
+    def test_legacy_entry_migrates_to_single_lot(self):
+        e = CollectionEntry(quantity=3, purchase_price=5.0, purchase_date="2025-01-01")
+        self.assertEqual(len(e.purchases), 1)
+        self.assertEqual(e.purchases[0].quantity, 3)
+        self.assertEqual(e.purchases[0].purchase_price, 5.0)
+        self.assertEqual(e.purchases[0].purchase_date, "2025-01-01")
+        self.assertEqual(e.quantity, 3)
+
+    def test_quantity_is_sum_of_lots(self):
+        e = CollectionEntry(purchases=[
+            PurchaseLot(quantity=2, purchase_price=5.0),
+            PurchaseLot(quantity=1, purchase_price=8.0),
+        ])
+        self.assertEqual(e.quantity, 3)
+        # Compat mirror reflects the first (primary) lot.
+        self.assertEqual(e.purchase_price, 5.0)
+
+    def test_roundtrip_preserves_lots(self):
+        e = CollectionEntry(purchases=[
+            PurchaseLot(quantity=2, purchase_price=5.0, purchase_date="2025-01-01"),
+            PurchaseLot(quantity=1, purchase_price=8.0, purchase_date="2025-06-01"),
+        ])
         reloaded = CollectionEntry(**e.model_dump())
-        self.assertEqual(reloaded.purchase_date, "2025-05-05")
-        self.assertEqual(reloaded.scan_timestamp, "2026-01-01T00:00:00")
+        self.assertEqual(len(reloaded.purchases), 2)
+        self.assertEqual(reloaded.quantity, 3)
+        self.assertEqual(reloaded.purchases[1].purchase_price, 8.0)
 
 
-class TestSetEntryPurchaseInfo(unittest.TestCase):
-    def _collection(self):
-        return Collection(name="c", cards=[
+class TestApplyChangeLots(unittest.TestCase):
+    def test_add_creates_new_lot_with_its_own_price(self):
+        col = Collection(name="c", cards=[])
+        card = _card()
+        # First purchase: 2 @ 5.0
+        CollectionEditor.apply_change(col, card, "LOB-EN001", "Ultra Rare", "EN", 2,
+                                      "Near Mint", False, mode="ADD",
+                                      edition="Unlimited Edition",
+                                      purchase_price=5.0, purchase_date="2025-01-01")
+        # Later purchase of the SAME stack: 1 @ 8.0 -> new lot, not merged.
+        CollectionEditor.apply_change(col, card, "LOB-EN001", "Ultra Rare", "EN", 1,
+                                      "Near Mint", False, mode="ADD",
+                                      edition="Unlimited Edition",
+                                      purchase_price=8.0, purchase_date="2025-06-01")
+        entry = col.cards[0].variants[0].entries[0]
+        self.assertEqual(entry.quantity, 3)
+        self.assertEqual(len(entry.purchases), 2)
+        self.assertEqual(entry.purchases[0].purchase_price, 5.0)
+        self.assertEqual(entry.purchases[1].purchase_price, 8.0)
+
+    def test_subtract_drains_oldest_lots_first(self):
+        col = Collection(name="c", cards=[])
+        card = _card()
+        CollectionEditor.apply_change(col, card, "LOB-EN001", "Ultra Rare", "EN", 2,
+                                      "Near Mint", False, mode="ADD",
+                                      purchase_price=5.0, purchase_date="2025-01-01")
+        CollectionEditor.apply_change(col, card, "LOB-EN001", "Ultra Rare", "EN", 2,
+                                      "Near Mint", False, mode="ADD",
+                                      purchase_price=8.0, purchase_date="2025-06-01")
+        # Remove 3 -> drains the first lot (2) then 1 from the second.
+        CollectionEditor.apply_change(col, card, "LOB-EN001", "Ultra Rare", "EN", -3,
+                                      "Near Mint", False, mode="ADD")
+        entry = col.cards[0].variants[0].entries[0]
+        self.assertEqual(entry.quantity, 1)
+        self.assertEqual(len(entry.purchases), 1)
+        self.assertEqual(entry.purchases[0].purchase_price, 8.0)  # oldest fully drained
+
+    def test_remove_all_deletes_stack(self):
+        col = Collection(name="c", cards=[])
+        card = _card()
+        CollectionEditor.apply_change(col, card, "LOB-EN001", "Ultra Rare", "EN", 2,
+                                      "Near Mint", False, mode="ADD", purchase_price=5.0)
+        CollectionEditor.apply_change(col, card, "LOB-EN001", "Ultra Rare", "EN", 0,
+                                      "Near Mint", False, mode="SET")
+        self.assertEqual(col.cards, [])
+
+
+class TestSetLotPurchaseInfo(unittest.TestCase):
+    def test_edits_single_lot_only(self):
+        col = Collection(name="c", cards=[
             CollectionCard(card_id=1, name="X", variants=[
                 CollectionVariant(variant_id="v1", set_code="LOB-EN001", rarity="Ultra Rare", entries=[
-                    CollectionEntry(quantity=2, language="EN", condition="Near Mint",
-                                    edition="1st Edition", first_edition=True, storage_location="Binder"),
-                    CollectionEntry(quantity=1, language="EN", condition="Near Mint",
-                                    edition="Unlimited Edition", first_edition=False, storage_location="Binder"),
+                    CollectionEntry(language="EN", condition="Near Mint",
+                                    edition="Unlimited Edition", storage_location="Binder",
+                                    purchases=[
+                                        PurchaseLot(quantity=2, purchase_price=5.0, purchase_date="2025-01-01"),
+                                        PurchaseLot(quantity=1, purchase_price=8.0, purchase_date="2025-06-01"),
+                                    ]),
                 ]),
             ]),
         ])
-
-    def test_updates_only_targeted_entry(self):
-        col = self._collection()
-        ok = CollectionEditor.set_entry_purchase_info(
+        ok = CollectionEditor.set_lot_purchase_info(
             col, card_id=1, variant_id="v1", language="EN", condition="Near Mint",
-            storage_location="Binder", edition="1st Edition", first_edition=True,
-            purchase_price=12.50, purchase_date="2025-03-01",
+            storage_location="Binder", lot_index=1, edition="Unlimited Edition",
+            purchase_price=9.99, purchase_date="2025-07-07",
         )
         self.assertTrue(ok)
-        entries = col.cards[0].variants[0].entries
-        first = next(e for e in entries if e.edition == "1st Edition")
-        unl = next(e for e in entries if e.edition == "Unlimited Edition")
-        self.assertEqual(first.purchase_price, 12.50)
-        self.assertEqual(first.purchase_date, "2025-03-01")
-        # The other stack is untouched, and quantities are preserved.
-        self.assertEqual(unl.purchase_price, 0.0)
-        self.assertIsNone(unl.purchase_date)
-        self.assertEqual(first.quantity, 2)
-        self.assertEqual(unl.quantity, 1)
+        entry = col.cards[0].variants[0].entries[0]
+        self.assertEqual(entry.purchases[0].purchase_price, 5.0)   # untouched
+        self.assertEqual(entry.purchases[1].purchase_price, 9.99)  # edited
+        self.assertEqual(entry.purchases[1].purchase_date, "2025-07-07")
+        self.assertEqual(entry.quantity, 3)  # unchanged
 
-    def test_returns_false_when_entry_absent(self):
-        col = self._collection()
-        ok = CollectionEditor.set_entry_purchase_info(
-            col, card_id=1, variant_id="v1", language="DE", condition="Near Mint",
-            storage_location="Binder", edition="1st Edition", first_edition=True,
-            purchase_price=5.0,
-        )
-        self.assertFalse(ok)
-
-    def test_only_sets_provided_fields(self):
-        col = self._collection()
-        # Set only price; date stays None.
-        CollectionEditor.set_entry_purchase_info(
-            col, card_id=1, variant_id="v1", language="EN", condition="Near Mint",
-            storage_location="Binder", edition="Unlimited Edition", first_edition=False,
-            purchase_price=3.0,
-        )
-        unl = next(e for e in col.cards[0].variants[0].entries if e.edition == "Unlimited Edition")
-        self.assertEqual(unl.purchase_price, 3.0)
-        self.assertIsNone(unl.purchase_date)
-
-    def test_multi_stack_card_each_stack_addressable(self):
-        # Ryko-style: 3 distinct stacks across two variants (different sets),
-        # each independently editable by (variant_id, lang, cond, edition, storage).
+    def test_bad_lot_index_returns_false(self):
         col = Collection(name="c", cards=[
-            CollectionCard(card_id=99, name="Ryko, Lightsworn Hunter", variants=[
-                CollectionVariant(variant_id="va", set_code="LODT-EN035", rarity="Ultra Rare", entries=[
-                    CollectionEntry(quantity=1, language="EN", condition="Near Mint",
-                                    edition="1st Edition", first_edition=True, storage_location="Binder A"),
-                    CollectionEntry(quantity=2, language="EN", condition="Played",
-                                    edition="Unlimited Edition", first_edition=False, storage_location="Bulk"),
-                ]),
-                CollectionVariant(variant_id="vb", set_code="BP02-EN044", rarity="Mosaic Rare", entries=[
-                    CollectionEntry(quantity=1, language="DE", condition="Near Mint",
-                                    edition="Unlimited Edition", first_edition=False, storage_location=None),
+            CollectionCard(card_id=1, name="X", variants=[
+                CollectionVariant(variant_id="v1", set_code="LOB-EN001", rarity="Ultra Rare", entries=[
+                    CollectionEntry(language="EN", condition="Near Mint",
+                                    edition="Unlimited Edition", storage_location="Binder",
+                                    purchases=[PurchaseLot(quantity=1, purchase_price=5.0)]),
                 ]),
             ]),
         ])
-        # Enumerate all owned stacks (mirrors the UI list logic).
-        stacks = [(v, e) for c in col.cards if c.card_id == 99 for v in c.variants for e in v.entries if e.quantity > 0]
-        self.assertEqual(len(stacks), 3)
-
-        # Edit each stack's purchase info independently.
-        targets = [
-            ("va", "EN", "Near Mint", "1st Edition", True, "Binder A", 9.99, "2025-01-01"),
-            ("va", "EN", "Played", "Unlimited Edition", False, "Bulk", 1.50, "2025-02-02"),
-            ("vb", "DE", "Near Mint", "Unlimited Edition", False, None, 4.25, "2025-03-03"),
-        ]
-        for vid, lang, cond, ed, fe, store, price, date in targets:
-            ok = CollectionEditor.set_entry_purchase_info(
-                col, card_id=99, variant_id=vid, language=lang, condition=cond,
-                storage_location=store, edition=ed, first_edition=fe,
-                purchase_price=price, purchase_date=date,
-            )
-            self.assertTrue(ok, f"stack {vid}/{lang}/{cond}/{ed} should be addressable")
-
-        # Verify each landed on the right stack and didn't bleed into others.
-        all_entries = [e for c in col.cards for v in c.variants for e in v.entries]
-        prices = sorted(e.purchase_price for e in all_entries)
-        self.assertEqual(prices, [1.50, 4.25, 9.99])
+        self.assertFalse(CollectionEditor.set_lot_purchase_info(
+            col, 1, "v1", "EN", "Near Mint", "Binder", lot_index=5,
+            edition="Unlimited Edition", purchase_price=1.0))
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-from src.core.models import Collection, CollectionCard, CollectionVariant, CollectionEntry, ApiCard
+from src.core.models import Collection, CollectionCard, CollectionVariant, CollectionEntry, PurchaseLot, ApiCard
 from src.core.utils import generate_variant_id
 from typing import Optional
 
@@ -12,6 +12,22 @@ def _edition_from(first_edition: bool, edition: Optional[str]) -> str:
 
 
 class CollectionEditor:
+    @staticmethod
+    def _drain_lots(entry: CollectionEntry, amount: int) -> None:
+        """Remove `amount` copies from an entry's purchase lots, oldest first.
+
+        Lots that reach zero are dropped. The caller should call
+        entry.sync_quantity() afterwards (or rely on apply_change doing so).
+        """
+        remaining = amount
+        for lot in list(entry.purchases):
+            if remaining <= 0:
+                break
+            take = min(lot.quantity, remaining)
+            lot.quantity -= take
+            remaining -= take
+        entry.purchases = [lot for lot in entry.purchases if lot.quantity > 0]
+
     @staticmethod
     def get_quantity(
         collection: Collection,
@@ -108,6 +124,8 @@ class CollectionEditor:
         mode: str = 'SET',
         storage_location: Optional[str] = None,
         edition: Optional[str] = None,
+        purchase_price: Optional[float] = None,
+        purchase_date: Optional[str] = None,
     ) -> bool:
         """
         Applies a change (add, set, remove) to a collection.
@@ -175,32 +193,54 @@ class CollectionEditor:
                     target_entry = e
                     break
 
-            # 5. Calculate New Quantity
-            final_quantity = 0
+            # 5. Determine the target total quantity for this stack.
             current_quantity = target_entry.quantity if target_entry else 0
-
             if mode == 'SET':
                 final_quantity = quantity
             elif mode == 'ADD':
                 final_quantity = current_quantity + quantity
+            else:
+                final_quantity = quantity
 
-            # 6. Apply Quantity Change
+            delta = final_quantity - current_quantity
+
+            # 6. Apply the change at the LOT level.
             if final_quantity > 0:
-                if target_entry:
-                    if target_entry.quantity != final_quantity:
-                        target_entry.quantity = final_quantity
-                        modified = True
-                else:
-                    target_variant.entries.append(CollectionEntry(
+                if not target_entry:
+                    # New stack: a single lot carrying the acquisition cost.
+                    target_entry = CollectionEntry(
                         condition=condition,
                         language=language,
                         edition=eff_edition,
                         first_edition=eff_first,
-                        quantity=final_quantity,
-                        storage_location=storage_location
-                    ))
+                        storage_location=storage_location,
+                        purchases=[PurchaseLot(
+                            quantity=final_quantity,
+                            purchase_price=purchase_price if purchase_price is not None else 0.0,
+                            purchase_date=purchase_date,
+                        )],
+                    )
+                    target_entry.sync_quantity()
+                    target_variant.entries.append(target_entry)
                     modified = True
+                elif delta > 0:
+                    # Adding copies: a NEW lot captures this acquisition's cost
+                    # (so a later purchase keeps its own price/date).
+                    target_entry.purchases.append(PurchaseLot(
+                        quantity=delta,
+                        purchase_price=purchase_price if purchase_price is not None else 0.0,
+                        purchase_date=purchase_date,
+                    ))
+                    target_entry.sync_quantity()
+                    modified = True
+                elif delta < 0:
+                    # Removing copies: drain oldest lots first (FIFO).
+                    CollectionEditor._drain_lots(target_entry, -delta)
+                    target_entry.sync_quantity()
+                    modified = True
+                # delta == 0: nothing to do.
             else:
+                # Target quantity is zero: remove the whole stack.
                 if target_entry:
                     target_variant.entries.remove(target_entry)
                     modified = True
@@ -287,24 +327,24 @@ class CollectionEditor:
         return modified
 
     @staticmethod
-    def set_entry_purchase_info(
+    def set_lot_purchase_info(
         collection: Collection,
         card_id: int,
         variant_id: str,
         language: str,
         condition: str,
         storage_location: Optional[str],
+        lot_index: int,
         edition: Optional[str] = None,
         first_edition: bool = False,
         purchase_price: Optional[float] = None,
         purchase_date: Optional[str] = None,
     ) -> bool:
-        """Update only the purchase price/date of one existing entry (stack).
+        """Update the price/date of ONE purchase lot within a stack.
 
-        Identifies the entry by (variant_id, language, condition, edition,
-        storage_location) — the same identity used for merging — and leaves
-        quantity and all other fields untouched. Returns True if an entry was
-        found and modified.
+        The stack is identified by (variant_id, language, condition, edition,
+        storage_location); the lot by `lot_index`. Quantity and all other
+        fields are untouched. Returns True if the lot was found and modified.
         """
         eff_edition = _edition_from(first_edition, edition)
 
@@ -324,12 +364,18 @@ class CollectionEditor:
         )
         if not target_entry:
             return False
+        if lot_index < 0 or lot_index >= len(target_entry.purchases):
+            return False
 
+        lot = target_entry.purchases[lot_index]
         modified = False
-        if purchase_price is not None and target_entry.purchase_price != purchase_price:
-            target_entry.purchase_price = purchase_price
+        if purchase_price is not None and lot.purchase_price != purchase_price:
+            lot.purchase_price = purchase_price
             modified = True
-        if purchase_date is not None and target_entry.purchase_date != purchase_date:
-            target_entry.purchase_date = purchase_date
+        if purchase_date is not None and lot.purchase_date != purchase_date:
+            lot.purchase_date = purchase_date
             modified = True
+        if modified:
+            # Refresh the compat mirrors (primary lot) on the entry.
+            target_entry.sync_quantity()
         return modified
