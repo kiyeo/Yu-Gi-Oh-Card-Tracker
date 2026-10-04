@@ -1495,7 +1495,12 @@ class CollectionPage:
             return
 
         if self.state['view_scope'] == 'collectors':
-             await self.single_card_view.open_collectors(card, quantity, initial_set or "N/A", rarity, set_name, language, condition, first_edition, image_url, image_id, set_price, self.state['current_collection'], on_save, variant_id=variant_id, printing_src=printing_src, edition=edition)
+             async def on_purchase_saved():
+                 # Purchase info was edited in place on the collection object;
+                 # persist and refresh the view.
+                 await self.apply_filters(reset_page=False)
+                 self._schedule_save()
+             await self.single_card_view.open_collectors(card, quantity, initial_set or "N/A", rarity, set_name, language, condition, first_edition, image_url, image_id, set_price, self.state['current_collection'], on_save, variant_id=variant_id, printing_src=printing_src, edition=edition, on_purchase_saved=on_purchase_saved)
              return
 
         # Fallback removed

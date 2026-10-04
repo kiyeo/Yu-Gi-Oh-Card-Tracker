@@ -285,3 +285,51 @@ class CollectionEditor:
                         modified = True
 
         return modified
+
+    @staticmethod
+    def set_entry_purchase_info(
+        collection: Collection,
+        card_id: int,
+        variant_id: str,
+        language: str,
+        condition: str,
+        storage_location: Optional[str],
+        edition: Optional[str] = None,
+        first_edition: bool = False,
+        purchase_price: Optional[float] = None,
+        purchase_date: Optional[str] = None,
+    ) -> bool:
+        """Update only the purchase price/date of one existing entry (stack).
+
+        Identifies the entry by (variant_id, language, condition, edition,
+        storage_location) — the same identity used for merging — and leaves
+        quantity and all other fields untouched. Returns True if an entry was
+        found and modified.
+        """
+        eff_edition = _edition_from(first_edition, edition)
+
+        target_card = next((c for c in collection.cards if c.card_id == card_id), None)
+        if not target_card:
+            return False
+        target_variant = next((v for v in target_card.variants if v.variant_id == variant_id), None)
+        if not target_variant:
+            return False
+        target_entry = next(
+            (e for e in target_variant.entries
+             if e.language == language
+             and e.condition == condition
+             and e.edition == eff_edition
+             and e.storage_location == storage_location),
+            None,
+        )
+        if not target_entry:
+            return False
+
+        modified = False
+        if purchase_price is not None and target_entry.purchase_price != purchase_price:
+            target_entry.purchase_price = purchase_price
+            modified = True
+        if purchase_date is not None and target_entry.purchase_date != purchase_date:
+            target_entry.purchase_date = purchase_date
+            modified = True
+        return modified

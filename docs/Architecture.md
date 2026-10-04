@@ -87,7 +87,7 @@ Collection
 
 - `CollectionCard` groups an abstract card identity by API card ID.
 - `CollectionVariant` identifies a printing. Its deterministic ID incorporates card ID, set code, rarity, and image ID so alternate artwork remains distinct.
-- `CollectionEntry` represents a physical stack. Entries with the same condition, language, **edition**, and storage location share one quantity.
+- `CollectionEntry` represents a physical stack. Entries with the same condition, language, **edition**, and storage location share one quantity. Each entry also carries optional `purchase_price` / `purchase_date` (editable per stack via the single-card view's **Purchase info** sub-dialog) and a separate `scan_timestamp` the scanner uses so it never overwrites a real purchase date.
 - `ApiCard` reference objects come from the local API cache and are joined at runtime. They are not serialized into a user's collection.
 
 ### Edition field

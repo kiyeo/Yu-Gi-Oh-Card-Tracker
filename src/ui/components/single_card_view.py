@@ -419,6 +419,77 @@ class SingleCardView:
                 elif total_owned == 0:
                     ui.label('Not in collection').classes('oy-text-faint italic')
 
+    def _render_purchase_info_button(self, card: ApiCard, current_collection, variant_id, on_saved=None):
+        """Render a 'Purchase info' button that opens a per-entry price/date editor.
+
+        Lists every entry (stack) of the given variant and lets the user edit
+        only purchase_price / purchase_date. Inventory (quantity/condition/etc.)
+        is edited elsewhere; this touches purchase fields only via
+        CollectionEditor.set_entry_purchase_info. `on_saved`, if provided, is
+        awaited after a successful save so the opener can persist + refresh.
+        """
+        from src.services.collection_editor import CollectionEditor
+
+        def _entries_for_variant():
+            if not current_collection:
+                return []
+            for c in current_collection.cards:
+                if c.card_id == card.id:
+                    for v in c.variants:
+                        if v.variant_id == variant_id:
+                            return [e for e in v.entries if e.quantity > 0]
+            return []
+
+        async def open_dialog():
+            entries = _entries_for_variant()
+            with ui.dialog() as d, ui.card().classes('oy-single-card-dialog w-[90vw] max-w-2xl p-5 sm:p-6 gap-3'):
+                ui.label('Purchase Info').classes('oy-single-card-title text-2xl')
+                ui.label('Record what you paid and when, per owned stack.').classes('oy-text-muted mb-2')
+
+                if not entries:
+                    ui.label('No owned stacks for this printing yet.').classes('oy-text-faint italic')
+                else:
+                    # Capture per-row inputs so Save can read them.
+                    rows = []
+                    with ui.grid(columns=5).classes('w-full gap-2 items-center'):
+                        for h in ['Cond', 'Lang', 'Edition', 'Price', 'Date']:
+                            ui.label(h).classes('oy-seclabel select-none')
+                        for e in entries:
+                            ui.label(e.condition).classes('text-sm')
+                            ui.label(e.language).classes('text-sm')
+                            ui.label(e.edition).classes('text-sm')
+                            price_in = ui.number(value=e.purchase_price or 0.0, min=0, format='%.2f') \
+                                .props('dense dark').classes('w-full')
+                            date_in = ui.input(value=e.purchase_date or '') \
+                                .props('dense dark type=date').classes('w-full')
+                            rows.append((e, price_in, date_in))
+
+                    async def do_save():
+                        changed = False
+                        for e, price_in, date_in in rows:
+                            price_val = float(price_in.value) if price_in.value is not None else None
+                            date_val = (date_in.value or '').strip() or None
+                            if CollectionEditor.set_entry_purchase_info(
+                                current_collection, card.id, variant_id,
+                                language=e.language, condition=e.condition,
+                                storage_location=e.storage_location, edition=e.edition,
+                                first_edition=e.first_edition,
+                                purchase_price=price_val, purchase_date=date_val,
+                            ):
+                                changed = True
+                        d.close()
+                        if changed and on_saved is not None:
+                            await on_saved()
+                        ui.notify('Purchase info saved.' if changed else 'No changes.', type='positive' if changed else 'info')
+
+                    with ui.row().classes('w-full justify-end q-mt-md gap-2'):
+                        ui.button('Cancel', on_click=d.close).props('flat color=secondary')
+                        ui.button('Save', on_click=do_save).props('color=positive')
+            d.open()
+
+        with ui.button('Purchase info', icon='payments', on_click=open_dialog).props('flat color=secondary'):
+            ui.tooltip('View and edit purchase price/date per owned stack')
+
     def _render_available_sets(self, card: ApiCard):
         ui.label('Available Sets').classes('oy-seclabel mt-2 select-none')
 
@@ -528,6 +599,76 @@ class SingleCardView:
 
                         await self._render_collection_status(total_owned, owned_breakdown)
 
+                        ui.separator().classes('q-my-md')
+
+                        # Add-to-inventory editor (restored for this deployment).
+                        inventory_expansion = ui.expansion().classes('w-full bg-gray-800 rounded').props('icon=add label="Add to Inventory"')
+                        with inventory_expansion:
+                            inv_set_options = {}
+                            inv_set_info_map = {}
+                            inv_rarity_map = {}
+
+                            if card.card_sets:
+                                for s in card.card_sets:
+                                    code = s.set_code
+                                    s_name = s.set_name
+                                    if not s_name or s_name in ("Custom Set", "N/A"):
+                                        fallback = await ygo_service.get_set_name_by_code(code)
+                                        if fallback:
+                                            s_name = fallback
+                                    if code not in inv_set_options:
+                                        inv_set_options[code] = f"{s_name} ({code})"
+                                        inv_set_info_map[code] = s
+                                    inv_rarity_map.setdefault(code, set()).add(s.set_rarity)
+                            else:
+                                inv_set_options["Custom"] = "Custom Set"
+
+                            default_set_code = list(inv_set_options.keys())[0] if inv_set_options else "Custom"
+                            default_rarity = "Common"
+                            if default_set_code in inv_set_info_map:
+                                default_rarity = inv_set_info_map[default_set_code].set_rarity
+
+                            inv_input_state = {
+                                'language': 'EN',
+                                'quantity': 1,
+                                'rarity': default_rarity,
+                                'condition': 'Near Mint',
+                                'first_edition': False,
+                                'edition': 'Unlimited Edition',
+                                'set_base_code': default_set_code,
+                                'image_id': img_id,
+                            }
+
+                            async def inv_on_save(mode, target_variant_id, quantity_override: int = None, storage_location: str = None):
+                                final_set_code = transform_set_code(inv_input_state['set_base_code'], inv_input_state['language'])
+                                qty = quantity_override if quantity_override is not None else inv_input_state['quantity']
+                                await save_callback(
+                                    card, final_set_code, inv_input_state['rarity'], inv_input_state['language'],
+                                    qty, inv_input_state['condition'], inv_input_state['first_edition'],
+                                    inv_input_state['image_id'], target_variant_id, mode,
+                                    storage_location=storage_location, edition=inv_input_state.get('edition'),
+                                )
+                                d.close()
+
+                            def inv_on_change():
+                                if inv_input_state['image_id'] != img_id:
+                                    update_image(inv_input_state['image_id'])
+
+                            self._render_inventory_management(
+                                card=card,
+                                input_state=inv_input_state,
+                                set_options=inv_set_options,
+                                set_info_map=inv_set_info_map,
+                                on_change_callback=inv_on_change,
+                                on_save_callback=inv_on_save,
+                                default_set_base_code=default_set_code,
+                                show_remove_button=False,
+                                rarity_map=inv_rarity_map,
+                                view_mode='consolidated',
+                                current_collection=current_collection,
+                                storage_options=storage_options,
+                            )
+
                         self._render_available_sets(card)
 
         except Exception as e:
@@ -554,6 +695,7 @@ class SingleCardView:
         storage_options: Dict[str, str] = None,
         printing_src: str = None,
         edition: str = None,
+        on_purchase_saved: Callable = None,
     ):
         try:
             active_timers = []
@@ -971,6 +1113,55 @@ class SingleCardView:
 
                         # Initial render
                         render_chart()
+
+                        ui.separator().classes('q-my-md')
+
+                        # Manage-inventory editor (restored for this deployment).
+                        inventory_expansion = ui.expansion().classes('w-full bg-gray-800 rounded').props('icon=edit label="Manage Inventory"')
+                        inventory_expansion.value = True
+                        with inventory_expansion:
+                            async def collectors_on_save(mode, target_variant_id, quantity_override: int = None, storage_location: str = None):
+                                final_set_code = transform_set_code(input_state['set_base_code'], input_state['language'])
+                                qty = quantity_override if quantity_override is not None else input_state['quantity']
+                                extra_args = {}
+                                if mode == 'MOVE':
+                                    extra_args = {
+                                        'source_variant_id': variant_id,
+                                        'source_language': language,
+                                        'source_condition': condition,
+                                        'source_first_edition': first_edition,
+                                        'source_quantity': owned_count,
+                                    }
+                                await save_callback(
+                                    card, final_set_code, input_state['rarity'], input_state['language'],
+                                    qty, input_state['condition'], input_state['first_edition'],
+                                    input_state['image_id'], target_variant_id, mode,
+                                    storage_location=storage_location,
+                                    edition=input_state.get('edition'),
+                                    **extra_args,
+                                )
+                                d.close()
+
+                            self._render_inventory_management(
+                                card=card,
+                                input_state=input_state,
+                                set_options=set_options,
+                                set_info_map=set_info_map,
+                                on_change_callback=update_display_stats,
+                                on_save_callback=collectors_on_save,
+                                default_set_base_code=initial_base_code,
+                                original_variant_id=variant_id,
+                                rarity_map=rarity_map,
+                                view_mode='collectors',
+                                current_collection=current_collection,
+                                original_quantity=owned_count,
+                                storage_options=storage_options,
+                            )
+
+                        if variant_id:
+                            self._render_purchase_info_button(
+                                card, current_collection, variant_id, on_saved=on_purchase_saved
+                            )
 
                         self._render_available_sets(card)
 

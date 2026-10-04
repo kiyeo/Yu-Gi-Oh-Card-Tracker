@@ -1296,14 +1296,9 @@ class ScanPage:
                     type="", frameType="", desc=""
                 )
 
-            # We need to inject the timestamp to ensure sorting works in recent list
-            # Since CollectionEntry doesn't have a dedicated timestamp, we misuse purchase_date or similar?
-            # User agreed to "Scan: Transform ... into a full fledged collection".
-            # I will reuse purchase_date as timestamp string
-
-            # Note: CollectionEditor doesn't let us pass purchase_date directly in apply_change easily without modifying it
-            # But CollectionEditor.apply_change returns True/False.
-            # I might need to find the entry and update it.
+            # Stamp the entry with a dedicated scan_timestamp (set below in
+            # _update_entry_timestamp) so recent-scan metadata never clobbers the
+            # user's real purchase_date.
 
             added = CollectionEditor.apply_change(
                 collection=self.recent_collection,
@@ -1481,7 +1476,9 @@ class ScanPage:
                              if (e.condition == match_criteria.get('condition') and
                                  e.language == match_criteria.get('language') and
                                  e.first_edition == match_criteria.get('first_edition')):
-                                 e.purchase_date = timestamp
+                                 # Dedicated scan timestamp — do NOT overwrite the
+                                 # user's real purchase_date.
+                                 e.scan_timestamp = timestamp
 
     async def _ensure_global_variant_exists(self, result_dict: Dict[str, Any]):
         """Checks if the scanned variant exists in the global DB, adds it if not."""

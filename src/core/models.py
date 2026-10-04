@@ -16,6 +16,9 @@ class CollectionEntry(BaseModel):
     purchase_price: Optional[float] = 0.0
     market_value: Optional[float] = 0.0
     purchase_date: Optional[str] = None
+    # Separate from purchase_date: set by the scanner as an acquisition/scan
+    # timestamp so a real purchase_date is never overwritten.
+    scan_timestamp: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
