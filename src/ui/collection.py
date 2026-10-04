@@ -1461,6 +1461,12 @@ class CollectionPage:
                 )
             await self.save_card_change(c, set_code, rarity, language, quantity, condition, first_edition, image_id, variant_id, mode, **kwargs)
 
+        async def on_purchase_saved():
+            # Purchase info was edited in place on the collection object;
+            # persist and refresh the view.
+            await self.apply_filters(reset_page=False)
+            self._schedule_save()
+
         # Prefer the era-accurate printing image when available.
         if printing_src:
             image_url = printing_src
@@ -1491,15 +1497,10 @@ class CollectionPage:
             # Sort breakdown by key (Set Code)
             sorted_breakdown = dict(sorted(owned_breakdown.items()))
 
-            await self.single_card_view.open_consolidated(card, total_owned, sorted_breakdown, on_save, current_collection=self.state['current_collection'])
+            await self.single_card_view.open_consolidated(card, total_owned, sorted_breakdown, on_save, current_collection=self.state['current_collection'], on_purchase_saved=on_purchase_saved)
             return
 
         if self.state['view_scope'] == 'collectors':
-             async def on_purchase_saved():
-                 # Purchase info was edited in place on the collection object;
-                 # persist and refresh the view.
-                 await self.apply_filters(reset_page=False)
-                 self._schedule_save()
              await self.single_card_view.open_collectors(card, quantity, initial_set or "N/A", rarity, set_name, language, condition, first_edition, image_url, image_id, set_price, self.state['current_collection'], on_save, variant_id=variant_id, printing_src=printing_src, edition=edition, on_purchase_saved=on_purchase_saved)
              return
 

@@ -419,58 +419,113 @@ class SingleCardView:
                 elif total_owned == 0:
                     ui.label('Not in collection').classes('oy-text-faint italic')
 
-    def _render_purchase_info_button(self, card: ApiCard, current_collection, variant_id, on_saved=None):
+    def _render_owned_stacks_list(self, card, current_collection, input_state, on_select):
+        """List every owned stack of the card. Clicking a row loads that stack's
+        attributes into `input_state` and calls `on_select()` so the inventory
+        editor targets it (for SUBTRACT/REMOVE/adjust)."""
+        def _all_entries():
+            result = []
+            if not current_collection:
+                return result
+            for c in current_collection.cards:
+                if c.card_id == card.id:
+                    for v in c.variants:
+                        for e in v.entries:
+                            if e.quantity > 0:
+                                result.append((v, e))
+            return result
+
+        entries = _all_entries()
+        if not entries:
+            return
+
+        ui.label('Owned Stacks').classes('oy-seclabel mt-1 select-none')
+        with ui.element('div').classes('oy-single-card-panel w-full'):
+            with ui.grid(columns=7).classes('w-full gap-2 px-3 py-2 oy-single-card-set-header'):
+                for h in ['Set', 'Rarity', 'Cond', 'Lang', 'Edition', 'Storage', 'Qty']:
+                    ui.label(h)
+            for v, e in entries:
+                def _select(v=v, e=e):
+                    input_state['set_base_code'] = v.set_code
+                    input_state['rarity'] = v.rarity
+                    input_state['image_id'] = v.image_id if v.image_id is not None else input_state.get('image_id')
+                    input_state['language'] = e.language
+                    input_state['condition'] = e.condition
+                    input_state['edition'] = e.edition
+                    input_state['first_edition'] = (e.edition == '1st Edition')
+                    input_state['storage_location'] = e.storage_location
+                    input_state['quantity'] = e.quantity
+                    on_select()
+
+                with ui.grid(columns=7).classes(
+                    'w-full gap-2 px-3 py-2 text-sm items-center cursor-pointer hover:bg-white/5 rounded'
+                ).on('click', _select):
+                    ui.label(v.set_code).classes('oy-mono oy-text-gold text-xs')
+                    ui.label(v.rarity).classes('text-xs')
+                    ui.label(e.condition).classes('text-xs')
+                    ui.label(e.language).classes('text-xs')
+                    ui.label(e.edition).classes('text-xs')
+                    ui.label(e.storage_location or '—').classes('text-xs')
+                    ui.label(str(e.quantity)).classes('text-xs font-bold oy-text-accent')
+
+    def _render_purchase_info_button(self, card: ApiCard, current_collection, variant_id=None, on_saved=None):
         """Render a 'Purchase info' button that opens a per-entry price/date editor.
 
-        Lists every entry (stack) of the given variant and lets the user edit
-        only purchase_price / purchase_date. Inventory (quantity/condition/etc.)
-        is edited elsewhere; this touches purchase fields only via
+        Lists **every** owned entry (stack) of this card — across all variants
+        (set/rarity/artwork) — and lets the user edit only purchase_price /
+        purchase_date. Inventory (quantity/condition/etc.) is edited elsewhere;
+        this touches purchase fields only via
         CollectionEditor.set_entry_purchase_info. `on_saved`, if provided, is
         awaited after a successful save so the opener can persist + refresh.
         """
         from src.services.collection_editor import CollectionEditor
 
-        def _entries_for_variant():
+        def _all_entries():
+            """Return [(variant, entry), ...] for every owned stack of the card."""
+            result = []
             if not current_collection:
-                return []
+                return result
             for c in current_collection.cards:
                 if c.card_id == card.id:
                     for v in c.variants:
-                        if v.variant_id == variant_id:
-                            return [e for e in v.entries if e.quantity > 0]
-            return []
+                        for e in v.entries:
+                            if e.quantity > 0:
+                                result.append((v, e))
+            return result
 
         async def open_dialog():
-            entries = _entries_for_variant()
-            with ui.dialog() as d, ui.card().classes('oy-single-card-dialog w-[90vw] max-w-2xl p-5 sm:p-6 gap-3'):
+            entries = _all_entries()
+            with ui.dialog() as d, ui.card().classes('oy-single-card-dialog w-[95vw] max-w-4xl p-5 sm:p-6 gap-3'):
                 ui.label('Purchase Info').classes('oy-single-card-title text-2xl')
-                ui.label('Record what you paid and when, per owned stack.').classes('oy-text-muted mb-2')
+                ui.label('Record what you paid and when — one row per owned stack.').classes('oy-text-muted mb-2')
 
                 if not entries:
-                    ui.label('No owned stacks for this printing yet.').classes('oy-text-faint italic')
+                    ui.label('No owned stacks for this card yet.').classes('oy-text-faint italic')
                 else:
-                    # Capture per-row inputs so Save can read them.
                     rows = []
-                    with ui.grid(columns=5).classes('w-full gap-2 items-center'):
-                        for h in ['Cond', 'Lang', 'Edition', 'Price', 'Date']:
+                    with ui.grid(columns=8).classes('w-full gap-2 items-center'):
+                        for h in ['Set', 'Rarity', 'Cond', 'Lang', 'Edition', 'Qty', 'Price', 'Date']:
                             ui.label(h).classes('oy-seclabel select-none')
-                        for e in entries:
-                            ui.label(e.condition).classes('text-sm')
-                            ui.label(e.language).classes('text-sm')
-                            ui.label(e.edition).classes('text-sm')
+                        for v, e in entries:
+                            ui.label(v.set_code).classes('text-xs font-mono oy-text-gold')
+                            ui.label(v.rarity).classes('text-xs')
+                            ui.label(e.condition).classes('text-xs')
+                            ui.label(e.language).classes('text-xs')
+                            ui.label(e.edition).classes('text-xs')
+                            ui.label(str(e.quantity)).classes('text-xs')
                             price_in = ui.number(value=e.purchase_price or 0.0, min=0, format='%.2f') \
                                 .props('dense dark').classes('w-full')
                             date_in = ui.input(value=e.purchase_date or '') \
                                 .props('dense dark type=date').classes('w-full')
-                            rows.append((e, price_in, date_in))
+                            rows.append((v, e, price_in, date_in))
 
                     async def do_save():
                         changed = False
-                        for e, price_in, date_in in rows:
+                        for v, e, price_in, date_in in rows:
                             price_val = float(price_in.value) if price_in.value is not None else None
                             date_val = (date_in.value or '').strip() or None
                             if CollectionEditor.set_entry_purchase_info(
-                                current_collection, card.id, variant_id,
+                                current_collection, card.id, v.variant_id,
                                 language=e.language, condition=e.condition,
                                 storage_location=e.storage_location, edition=e.edition,
                                 first_edition=e.first_edition,
@@ -480,7 +535,8 @@ class SingleCardView:
                         d.close()
                         if changed and on_saved is not None:
                             await on_saved()
-                        ui.notify('Purchase info saved.' if changed else 'No changes.', type='positive' if changed else 'info')
+                        ui.notify('Purchase info saved.' if changed else 'No changes.',
+                                  type='positive' if changed else 'info')
 
                     with ui.row().classes('w-full justify-end q-mt-md gap-2'):
                         ui.button('Cancel', on_click=d.close).props('flat color=secondary')
@@ -488,7 +544,7 @@ class SingleCardView:
             d.open()
 
         with ui.button('Purchase info', icon='payments', on_click=open_dialog).props('flat color=secondary'):
-            ui.tooltip('View and edit purchase price/date per owned stack')
+            ui.tooltip('View and edit purchase price/date for every owned stack of this card')
 
     def _render_available_sets(self, card: ApiCard):
         ui.label('Available Sets').classes('oy-seclabel mt-2 select-none')
@@ -524,7 +580,8 @@ class SingleCardView:
         owned_breakdown: Dict[str, Dict[str, Any]],
         save_callback: Callable,
         current_collection: Any = None,
-        storage_options: Dict[str, str] = None
+        storage_options: Dict[str, str] = None,
+        on_purchase_saved: Callable = None
     ):
         try:
             with ui.dialog().props('maximized transition-show=slide-up transition-hide=slide-down') as d, ui.card().classes('oy-single-card-dialog w-full h-full p-0 no-shadow'):
@@ -654,20 +711,32 @@ class SingleCardView:
                                 if inv_input_state['image_id'] != img_id:
                                     update_image(inv_input_state['image_id'])
 
-                            self._render_inventory_management(
-                                card=card,
-                                input_state=inv_input_state,
-                                set_options=inv_set_options,
-                                set_info_map=inv_set_info_map,
-                                on_change_callback=inv_on_change,
-                                on_save_callback=inv_on_save,
-                                default_set_base_code=default_set_code,
-                                show_remove_button=False,
-                                rarity_map=inv_rarity_map,
-                                view_mode='consolidated',
-                                current_collection=current_collection,
-                                storage_options=storage_options,
+                            @ui.refreshable
+                            def _consolidated_inventory_editor():
+                                self._render_inventory_management(
+                                    card=card,
+                                    input_state=inv_input_state,
+                                    set_options=inv_set_options,
+                                    set_info_map=inv_set_info_map,
+                                    on_change_callback=inv_on_change,
+                                    on_save_callback=inv_on_save,
+                                    default_set_base_code=default_set_code,
+                                    show_remove_button=True,
+                                    rarity_map=inv_rarity_map,
+                                    view_mode='consolidated',
+                                    current_collection=current_collection,
+                                    storage_options=storage_options,
+                                )
+
+                            self._render_owned_stacks_list(
+                                card, current_collection, inv_input_state,
+                                on_select=lambda: _consolidated_inventory_editor.refresh(),
                             )
+                            _consolidated_inventory_editor()
+
+                        self._render_purchase_info_button(
+                            card, current_collection, on_saved=on_purchase_saved
+                        )
 
                         self._render_available_sets(card)
 
@@ -1142,26 +1211,35 @@ class SingleCardView:
                                 )
                                 d.close()
 
-                            self._render_inventory_management(
-                                card=card,
-                                input_state=input_state,
-                                set_options=set_options,
-                                set_info_map=set_info_map,
-                                on_change_callback=update_display_stats,
-                                on_save_callback=collectors_on_save,
-                                default_set_base_code=initial_base_code,
-                                original_variant_id=variant_id,
-                                rarity_map=rarity_map,
-                                view_mode='collectors',
-                                current_collection=current_collection,
-                                original_quantity=owned_count,
-                                storage_options=storage_options,
-                            )
+                            @ui.refreshable
+                            def _collectors_inventory_editor():
+                                self._render_inventory_management(
+                                    card=card,
+                                    input_state=input_state,
+                                    set_options=set_options,
+                                    set_info_map=set_info_map,
+                                    on_change_callback=update_display_stats,
+                                    on_save_callback=collectors_on_save,
+                                    default_set_base_code=initial_base_code,
+                                    original_variant_id=variant_id,
+                                    rarity_map=rarity_map,
+                                    view_mode='collectors',
+                                    current_collection=current_collection,
+                                    original_quantity=owned_count,
+                                    storage_options=storage_options,
+                                )
 
-                        if variant_id:
-                            self._render_purchase_info_button(
-                                card, current_collection, variant_id, on_saved=on_purchase_saved
+                            # List all owned stacks; clicking one loads it into
+                            # the editor below so each entry can be edited.
+                            self._render_owned_stacks_list(
+                                card, current_collection, input_state,
+                                on_select=lambda: [_collectors_inventory_editor.refresh(), update_display_stats()],
                             )
+                            _collectors_inventory_editor()
+
+                        self._render_purchase_info_button(
+                            card, current_collection, on_saved=on_purchase_saved
+                        )
 
                         self._render_available_sets(card)
 
