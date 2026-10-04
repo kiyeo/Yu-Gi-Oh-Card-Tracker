@@ -1337,6 +1337,8 @@ class CollectionPage:
 
         col = self.state['current_collection']
         edition = kwargs.get('edition')
+        purchase_price = kwargs.get('purchase_price')
+        purchase_date = kwargs.get('purchase_date')
 
         try:
             modified = False
@@ -1415,7 +1417,9 @@ class CollectionPage:
                     variant_id=variant_id,
                     mode=mode,
                     storage_location=storage_location,
-                    edition=edition
+                    edition=edition,
+                    purchase_price=purchase_price,
+                    purchase_date=purchase_date
                 )
 
                 if modified:

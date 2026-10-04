@@ -6,6 +6,7 @@ from src.services.pricing_service import pricing_service
 from src.core.utils import transform_set_code, generate_variant_id, normalize_set_code, extract_language_code, LANGUAGE_COUNTRY_MAP
 from src.core.constants import CARD_CONDITIONS, RARITY_RANKING, CARD_EDITIONS
 from typing import List, Optional, Dict, Set, Callable, Any
+from datetime import date
 import logging
 import asyncio
 import random
@@ -220,6 +221,15 @@ class SingleCardView:
 
                 ui.number('Quantity', min=0, value=input_state['quantity'],
                             on_change=lambda e: input_state.update({'quantity': int(e.value or 0)})).classes('col-span-6 sm:col-span-2').props('dense dark')
+
+                # Purchase price/date for the lot created by an ADD. Date
+                # defaults to today; both are editable later in Purchase info.
+                ui.number('Price', min=0, value=input_state.get('purchase_price', 0.0), format='%.2f',
+                            on_change=lambda e: input_state.update({'purchase_price': float(e.value or 0.0)})) \
+                            .classes('col-span-6 sm:col-span-2').props('dense dark')
+                ui.input('Date', value=input_state.get('purchase_date', ''),
+                            on_change=lambda e: input_state.update({'purchase_date': e.value})) \
+                            .props('dense dark type=date').classes('col-span-6 sm:col-span-2')
 
                 # Build Artwork Options
                 art_options = {}
@@ -694,6 +704,8 @@ class SingleCardView:
                                 'edition': 'Unlimited Edition',
                                 'set_base_code': default_set_code,
                                 'image_id': img_id,
+                                'purchase_price': 0.0,
+                                'purchase_date': date.today().isoformat(),
                             }
 
                             async def inv_on_save(mode, target_variant_id, quantity_override: int = None, storage_location: str = None):
@@ -704,6 +716,8 @@ class SingleCardView:
                                     qty, inv_input_state['condition'], inv_input_state['first_edition'],
                                     inv_input_state['image_id'], target_variant_id, mode,
                                     storage_location=storage_location, edition=inv_input_state.get('edition'),
+                                    purchase_price=inv_input_state.get('purchase_price'),
+                                    purchase_date=(inv_input_state.get('purchase_date') or None),
                                 )
                                 d.close()
 
@@ -837,7 +851,9 @@ class SingleCardView:
                 'first_edition': first_edition,
                 'edition': edition or ("1st Edition" if first_edition else "Unlimited Edition"),
                 'set_base_code': initial_base_code,
-                'image_id': image_id
+                'image_id': image_id,
+                'purchase_price': 0.0,
+                'purchase_date': date.today().isoformat(),
             }
 
             def get_ownership_text(set_base_code, rarity, image_id, language, condition, first_edition):
@@ -1207,6 +1223,8 @@ class SingleCardView:
                                     input_state['image_id'], target_variant_id, mode,
                                     storage_location=storage_location,
                                     edition=input_state.get('edition'),
+                                    purchase_price=input_state.get('purchase_price'),
+                                    purchase_date=(input_state.get('purchase_date') or None),
                                     **extra_args,
                                 )
                                 d.close()

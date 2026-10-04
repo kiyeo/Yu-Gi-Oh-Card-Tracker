@@ -1,6 +1,14 @@
 from src.core.models import Collection, CollectionCard, CollectionVariant, CollectionEntry, PurchaseLot, ApiCard
 from src.core.utils import generate_variant_id
 from typing import Optional
+from datetime import date
+
+
+def _lot_date(purchase_date: Optional[str]) -> str:
+    """Resolve a lot's purchase date: use the provided one, else today (ISO)."""
+    if purchase_date:
+        return purchase_date
+    return date.today().isoformat()
 
 
 def _edition_from(first_edition: bool, edition: Optional[str]) -> str:
@@ -217,7 +225,7 @@ class CollectionEditor:
                         purchases=[PurchaseLot(
                             quantity=final_quantity,
                             purchase_price=purchase_price if purchase_price is not None else 0.0,
-                            purchase_date=purchase_date,
+                            purchase_date=_lot_date(purchase_date),
                         )],
                     )
                     target_entry.sync_quantity()
@@ -229,7 +237,7 @@ class CollectionEditor:
                     target_entry.purchases.append(PurchaseLot(
                         quantity=delta,
                         purchase_price=purchase_price if purchase_price is not None else 0.0,
-                        purchase_date=purchase_date,
+                        purchase_date=_lot_date(purchase_date),
                     ))
                     target_entry.sync_quantity()
                     modified = True

@@ -15,6 +15,7 @@ The screen is split into two halves:
    - **Language**: e.g., English (EN).
    - **Condition**: e.g., Near Mint.
    - **Edition**: Choose **1st Edition**, **Unlimited Edition**, or **Limited Edition** from the dropdown.
+   - **Price / Date**: The purchase price and date stamped on each new purchase lot. The date defaults to today. Set these once per batch (e.g. a booster box bought today) and every card you add captures them; change them for the next batch. You can also edit any lot's price/date later via **Purchase info** in the single-card view.
 3. **Find Cards**: Search for a card in the Left Pane.
 4. **Add**:
    - **Right-Click**: Right-click a card in the Library to add 1 copy with default settings.

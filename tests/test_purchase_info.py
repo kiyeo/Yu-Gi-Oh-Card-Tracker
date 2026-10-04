@@ -89,6 +89,24 @@ class TestApplyChangeLots(unittest.TestCase):
         self.assertEqual(len(entry.purchases), 1)
         self.assertEqual(entry.purchases[0].purchase_price, 8.0)  # oldest fully drained
 
+    def test_new_lot_defaults_date_to_today(self):
+        import datetime
+        col = Collection(name="c", cards=[])
+        card = _card()
+        CollectionEditor.apply_change(col, card, "LOB-EN001", "Ultra Rare", "EN", 1,
+                                      "Near Mint", False, mode="ADD", purchase_price=5.0)
+        entry = col.cards[0].variants[0].entries[0]
+        self.assertEqual(entry.purchases[0].purchase_date, datetime.date.today().isoformat())
+
+    def test_explicit_date_is_respected(self):
+        col = Collection(name="c", cards=[])
+        card = _card()
+        CollectionEditor.apply_change(col, card, "LOB-EN001", "Ultra Rare", "EN", 1,
+                                      "Near Mint", False, mode="ADD",
+                                      purchase_price=5.0, purchase_date="2024-12-25")
+        entry = col.cards[0].variants[0].entries[0]
+        self.assertEqual(entry.purchases[0].purchase_date, "2024-12-25")
+
     def test_remove_all_deletes_stack(self):
         col = Collection(name="c", cards=[])
         card = _card()

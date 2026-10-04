@@ -14,6 +14,7 @@ from src.ui.theme import page_header
 from src.core.models import ApiCardSet, Collection
 from dataclasses import dataclass
 from typing import Iterable, Iterator, List, Optional, Any, Dict, Tuple
+from datetime import date
 import logging
 import asyncio
 import re
@@ -161,6 +162,8 @@ class BulkAddPage:
             'default_first_ed': False,
             'default_edition': 'Unlimited Edition',
             'default_storage': None,
+            'default_purchase_price': 0.0,
+            'default_purchase_date': date.today().isoformat(),
             'available_collections': [],
 
             # Library State
@@ -260,6 +263,8 @@ class BulkAddPage:
         # Keep the legacy bool in sync with the edition string.
         self.state['default_first_ed'] = (self.state['default_edition'] == '1st Edition')
         self.state['default_storage'] = ui_state.get('bulk_default_storage', self.state['default_storage'])
+        # Price persists; date defaults to today each session (not a stale date).
+        self.state['default_purchase_price'] = ui_state.get('bulk_default_purchase_price', self.state['default_purchase_price'])
 
         # Load update options
         self.state['update_apply_lang'] = ui_state.get('bulk_update_apply_lang', False)
@@ -370,7 +375,7 @@ class BulkAddPage:
         # Apply
         await self.apply_collection_filters()
 
-    async def _update_collection(self, api_card, set_code, rarity, lang, qty, cond, first, img_id, mode='ADD', variant_id=None, save=True, storage_location=None, edition=None):
+    async def _update_collection(self, api_card, set_code, rarity, lang, qty, cond, first, img_id, mode='ADD', variant_id=None, save=True, storage_location=None, edition=None, purchase_price=None, purchase_date=None):
         if not self.current_collection_obj or not self.state['selected_collection']:
             return False
 
@@ -398,7 +403,9 @@ class BulkAddPage:
                 variant_id=variant_id,
                 mode=mode,
                 storage_location=storage_location,
-                edition=eff_edition
+                edition=eff_edition,
+                purchase_price=purchase_price,
+                purchase_date=purchase_date
             )
 
             if modified:
@@ -767,7 +774,9 @@ class BulkAddPage:
             img_id=entry.image_id,
             mode='ADD',
             storage_location=self.state['default_storage'],
-            edition=edition or ('1st Edition' if first else self.state.get('default_edition', 'Unlimited Edition'))
+            edition=edition or ('1st Edition' if first else self.state.get('default_edition', 'Unlimited Edition')),
+            purchase_price=self.state.get('default_purchase_price'),
+            purchase_date=(self.state.get('default_purchase_date') or None),
         )
 
         if success:
@@ -1977,6 +1986,16 @@ class BulkAddPage:
                  ui.select(storage_opts, label='Storage',
                            value=self.state['default_storage'],
                            on_change=lambda e: [self.state.update({'default_storage': e.value}), persistence.save_ui_state({'bulk_default_storage': e.value})]).props('dense options-dense').classes('w-32')
+
+                 ui.number(label='Price', value=self.state['default_purchase_price'], min=0, format='%.2f',
+                           on_change=lambda e: [
+                               self.state.update({'default_purchase_price': float(e.value or 0.0)}),
+                               persistence.save_ui_state({'bulk_default_purchase_price': float(e.value or 0.0)}),
+                           ]).props('dense').classes('w-24')
+
+                 ui.input(label='Date', value=self.state['default_purchase_date'],
+                          on_change=lambda e: self.state.update({'default_purchase_date': e.value})) \
+                           .props('dense type=date').classes('w-36')
 
              ui.space()
 

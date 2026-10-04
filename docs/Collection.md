@@ -32,7 +32,7 @@ Clicking on any card opens the **Single Card View**.
 ![Single Card View](images/single_card_view.png)
 
 This dialog allows precise management of a card's inventory.
-- **Add/Remove**: Adjust quantity for specific sets (the **Manage Inventory** / **Add to Inventory** section).
+- **Add/Remove**: Adjust quantity for specific sets (the **Manage Inventory** / **Add to Inventory** section). Each ADD creates a new purchase lot and captures the **Price** and **Date** entered in the editor (date defaults to today); you can edit these later in **Purchase info**.
 - **Variant Selection**: Choose Set Code, Rarity, Condition, Language, and Edition.
 - **Edition**: Each copy records its print edition — **1st Edition**, **Unlimited Edition**, or **Limited Edition**. Copies that differ only by edition are tracked as separate stacks. In the card badges, 1st Edition shows as `1st`, Limited as `LTD`, and Unlimited is left blank.
 - **Storage**: Assign the card to a specific Box or Binder directly from this view.
